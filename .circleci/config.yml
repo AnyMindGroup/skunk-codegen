@@ -103,22 +103,30 @@ workflows:
   pull_request:
     jobs:
       - build:
+          context:
+            - anychat-be
           filters:
             branches:
               ignore:
                 - master
       - test:
+          context:
+            - anychat-be
           requires:
             - build
 
   integration:
     jobs:
       - build:
+          context:
+            - anychat-be
           filters:
             branches:
               only:
                 - master
       - test:
+          context:
+            - anychat-be
           requires:
             - build
       - add_tag:
@@ -128,6 +136,8 @@ workflows:
   release:
     jobs:
       - publish:
+          context:
+            - anychat-be
           filters:
             tags:
               only: /v\d+\.\d+\.\d+/
