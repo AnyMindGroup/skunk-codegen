@@ -4,6 +4,17 @@ ThisBuild / scalaVersion := "2.12.17"
 val skunkVersion       = "0.5.1"
 val betterFilesVersion = "3.9.2"
 
+lazy val commonSettings = List(
+  credentials += {
+    for {
+      username <- sys.env.get("ARTIFACT_REGISTRY_USERNAME")
+      apiKey   <- sys.env.get("ARTIFACT_REGISTRY_PASSWORD")
+    } yield Credentials("https://asia-maven.pkg.dev", "asia-maven.pkg.dev", username, apiKey)
+  }.getOrElse(Credentials(Path.userHome / ".ivy2" / ".credentials")),
+  version ~= (_.replace('+', '-')),
+  dynver ~= (_.replace('+', '-')),
+)
+
 lazy val root = (project in file("."))
   .dependsOn(core, sbtPlugin)
   .aggregate(core, sbtPlugin)
@@ -33,11 +44,13 @@ lazy val core = (project in file("modules/core"))
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
     ),
   )
-  .settings(noPublishSettings)
+  .settings(commonSettings)
+  .settings(releaseSettings)
 
 lazy val sbtPlugin = (project in file("modules/sbt"))
   .enablePlugins(SbtPlugin)
   .dependsOn(core)
+  .settings(commonSettings)
   .settings(releaseSettings)
   .settings(
     name         := "sbt-skunk-codegen",
@@ -47,13 +60,4 @@ lazy val sbtPlugin = (project in file("modules/sbt"))
         Seq("-Xmx1024M", "-Dplugin.version=" + version.value)
     },
     scriptedBufferLog := false,
-    publishMavenStyle := true,
-    version ~= (_.replace('+', '-')),
-    dynver ~= (_.replace('+', '-')),
-    credentials += {
-      for {
-        username <- sys.env.get("ARTIFACT_REGISTRY_USERNAME")
-        apiKey   <- sys.env.get("ARTIFACT_REGISTRY_PASSWORD")
-      } yield Credentials("https://asia-maven.pkg.dev", "asia-maven.pkg.dev", username, apiKey)
-    }.getOrElse(Credentials(Path.userHome / ".ivy2" / ".credentials")),
   )
