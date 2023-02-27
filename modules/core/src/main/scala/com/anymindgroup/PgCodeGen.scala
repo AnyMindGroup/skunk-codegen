@@ -410,11 +410,12 @@ class PgCodeGen(
       }
     }
 
+    val allCols     = columns ::: autoIncFk
+    val allColNames = allCols.map(_.columnName)
     val upsertQ = uniqueConstr.map { cstr =>
-      val intoCols =
-        s"(${(columns ::: autoIncFk).map(_.columnName).filterNot(cstr.columnNames.contains).mkString(",")})"
+      val updateCols     = allCols.filterNot(c => cstr.columnNames.contains(c.columnName))
+      val updateColNames = allColNames.filterNot(cstr.columnNames.contains)
 
-      val updateCols = (columns ::: autoIncFk).filterNot(c => cstr.columnNames.contains(c.columnName))
       val intoCodecIntr =
         updateCols
           .map(_.codecName)
@@ -423,12 +424,15 @@ class PgCodeGen(
       val updateScalaType = updateCols.map(_.scalaType).mkString(" ~ ")
 
       s"""|  def upsertQuery: Command[$rowClassName ~ $updateScalaType] =
-          |    sql"INSERT INTO #$$tableName VALUES $${${rowClassName}.codec} ON CONFLICT ON CONSTRAINT (${cstr.name}) DO UPDATE SET $intoCols=($intoCodecIntr)".command""".stripMargin
+          |    sql\"\"\"INSERT INTO #$$tableName (${allColNames.mkString(",")}) VALUES ($${${rowClassName}.codec}) 
+          |          ON CONFLICT ON CONSTRAINT (${cstr.name}) 
+          |          DO UPDATE SET (${updateColNames.mkString(",")})=($intoCodecIntr)\"\"\"".command""".stripMargin
     }
 
     val insertQ =
       s"""|  def insertQuery: Command[$rowClassName] =
-          |    sql"INSERT INTO #$$tableName VALUES $${${rowClassName}.codec} ON CONFLICT DO NOTHING".command""".stripMargin
+          |    sql\"\"\"INSERT INTO #$$tableName (${allColNames.mkString(",")}) 
+          |          VALUES ($${${rowClassName}.codec}) ON CONFLICT DO NOTHING\"\"\".command""".stripMargin
 
     List(
       upsertQ.getOrElse(""),
