@@ -1,0 +1,127 @@
+package com.anymindgroup
+
+import cats.effect.IOApp
+import cats.effect.{ExitCode, IO}
+import skunk.Session
+import natchez.Trace.Implicits.noop
+import com.anymindgroup.generated.TestBTable
+import com.anymindgroup.generated.TestBRow
+import skunk.implicits.*
+import com.anymindgroup.generated.TestTable
+import com.anymindgroup.generated.TestRow
+import com.anymindgroup.generated.TestEnumType
+import skunk.util.Typer
+import java.time.OffsetDateTime
+import better.files.File
+import skunk.*
+import skunk.util.Origin
+import skunk.{Command => SqlCommand}
+import cats.implicits.*
+import java.time.temporal.ChronoUnit
+import java.time.ZoneOffset
+
+object GeneratedCodeTest extends IOApp {
+
+  override def run(args: List[String]): IO[ExitCode] = migrate >> Session
+    .single[IO](
+      host = "localhost",
+      port = 5432,
+      user = "postgres",
+      database = "postgres",
+      password = Some("postgres"),
+      strategy = Typer.Strategy.SearchPath, // to include custom types like enums,
+    )
+    .use { s =>
+      val testRow = TestRow(
+        number = Some(1),
+        createdAt = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS),
+        template = Some(TestEnumType.T1),
+        name = Some("name"),
+        name2 = "name2",
+      )
+
+      val testBRow = TestBRow(
+        keyA = "keyA",
+        keyB = "keyB",
+        val1 = "val1",
+        val2 = "val2",
+        val3 = "val3",
+        val4 = "val4",
+        val5 = "val5",
+        val6 = "val6",
+        val7 = "val7",
+        val8 = "val8",
+        val9 = "val9",
+        val10 = "val10",
+        val11 = "val11",
+        val12 = "val12",
+        val13 = "val13",
+        val14 = "val14",
+        val15 = "val15",
+        val16 = "val16",
+        val17 = "val17",
+        val18 = "val18",
+        val19 = "val19",
+        val20 = "val20",
+        val21 = "val21",
+        val22 = "val22",
+        val23 = "val23",
+        val24 = "val24",
+        val25 = "val25",
+      )
+
+      for {
+        // Test table
+        p         <- s.prepare(TestTable.upsertQuery)
+        _         <- p.execute(testRow.withUpdate)
+        all       <- s.execute(TestTable.selectAll())
+        allWithId <- s.execute(TestTable.selectAllWithId())
+        _         <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
+        _         <- IO.raiseWhen(allWithId.map(_._2) != List(testRow))(new Throwable("test A result with id not equal"))
+        // TestB table
+        upsertCmd   <- s.prepare(TestBTable.upsertQuery)
+        _           <- upsertCmd.execute(testBRow.withUpdate)
+        allLoaded   <- s.execute(TestBTable.selectAll())
+        _           <- IO.raiseWhen(List(testBRow) != allLoaded)(new Throwable("test B result not equal"))
+        _           <- upsertCmd.execute(testBRow.copy(val1 = "val1_update").withUpdate)
+        afterUpdate <- s.execute(TestBTable.selectAll())
+        _           <- IO.raiseWhen(afterUpdate.length != 1)(new Throwable("test B result unexpected length"))
+        _ <-
+          IO.raiseWhen(afterUpdate.headOption.map(_.val1) != Some("val1_update"))(
+            new Throwable("test B result missing update")
+          )
+        _ <- IO.println("Test successful!")
+      } yield ()
+
+    }
+    .as(ExitCode.Success)
+
+  private def migrate = Session
+    .single[IO](
+      host = "localhost",
+      port = 5432,
+      user = "postgres",
+      database = "postgres",
+      password = Some("postgres"),
+      strategy = Typer.Strategy.BuiltinsOnly,
+    )
+    .use { session =>
+      for {
+        _ <- session.execute(sql"DROP SCHEMA IF EXISTS public CASCADE".command)
+        _ <- session.execute(sql"CREATE SCHEMA public".command)
+        _ <- File("modules/core/src/test/resources/db/migration").children.toList
+               .sortBy(f => f.name.drop(1).takeWhile(_ != '_').toInt)
+               .flatMap { f =>
+                 f.lineIterator
+                   .filterNot(_.trim.startsWith("--"))
+                   .mkString("\n")
+                   .split(";")
+                   .filterNot(l => l.trim.isEmpty || l.contains("ANALYZE VERBOSE"))
+                   .map { sql =>
+                     SqlCommand(s"$sql;", Origin(file = f.pathAsString, line = 0), Void.codec)
+                   }
+               }
+               .traverse_(session.execute)
+      } yield ()
+    }
+}

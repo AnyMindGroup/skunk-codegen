@@ -84,9 +84,22 @@ jobs:
       - restore_dependencies
       - restore_build
       - run:
-          name: Test
-          command: |
-            sbt scripted
+          name: Generate code
+          command: sbt 'core/Test/runMain com.anymindgroup.RunPgCodeGen'
+      - run:
+          name: Test generated code
+          command: sbt 'core/Test/runMain com.anymindgroup.GeneratedCodeTest'
+      - store_dependencies
+
+  test-sbt:
+    executor: docker-test
+    steps:
+      - checkout
+      - restore_dependencies
+      - restore_build
+      - run:
+          name: Test sbt plugin
+          command: sbt scripted
       - store_dependencies
 
   publish:
@@ -114,6 +127,11 @@ workflows:
             - anychat-be
           requires:
             - build
+      - test-sbt:
+          context:
+            - anychat-be
+          requires:
+            - build
 
   integration:
     jobs:
@@ -129,9 +147,15 @@ workflows:
             - anychat-be
           requires:
             - build
+      - test-sbt:
+          context:
+            - anychat-be
+          requires:
+            - build
       - add_tag:
           requires:
             - test
+            - test-sbt
 
   release:
     jobs:

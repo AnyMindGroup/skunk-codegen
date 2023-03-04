@@ -147,19 +147,19 @@ class PgCodeGen(
           getColumns(s, enums).parProduct(getIndexes(s)).parProduct(getConstraints(s))
         tables = toTables(columns, indexes, constraints)
         files = pkgFiles(tables, enums) ::: tables.flatMap { table =>
-                  List(
-                    pkgDir / s"${table.tableClassName}.scala" -> tableFileContent(table),
-                    pkgDir / s"${table.rowClassName}.scala"   -> rowFileContent(table),
-                  )
+                  rowFileContent(table) match {
+                    case None => Nil
+                    case Some(rowContent) =>
+                      List(
+                        pkgDir / s"${table.tableClassName}.scala" -> tableFileContent(table),
+                        pkgDir / s"${table.rowClassName}.scala"   -> rowContent,
+                      )
+                  }
                 }
         _ <- IO(pkgDir.delete(true).createDirectoryIfNotExists())
         res <- files.parTraverse { case (file, content) =>
                  for {
-                   _ <- IO(
-                          file
-                            .createIfNotExists()
-                            .overwrite(content)
-                        )
+                   _ <- IO(file.writeText(content))
                    _ <- IO.println(s"Created ${file.pathAsString}")
                  } yield file
                }
@@ -228,18 +228,23 @@ class PgCodeGen(
         s"""|package $pkgName
             |
             |import skunk.Codec
-            |import enumeratum.{EnumEntry, Enum}
+            |import enumeratum.values.{StringEnumEntry, StringEnum}
             |import skunk.data.Type
             |
-            |sealed trait ${e.scalaName} extends EnumEntry with EnumEntry.Lowercase
-            |object ${e.scalaName} extends Enum[${e.scalaName}] {
+            |sealed abstract class ${e.scalaName}(val value: String) extends StringEnumEntry
+            |object ${e.scalaName} extends StringEnum[${e.scalaName}] {
             |  ${e.values
-             .map(v => s"case object ${v.scalaName} extends ${e.scalaName}")
+             .map(v => s"""case object ${v.scalaName} extends ${e.scalaName}("${v.name}")""")
              .mkString("\n  ")}
             |
-            |  val values = findValues
+            |  val values: IndexedSeq[${e.scalaName}] = findValues
             |
-            |  implicit val codec: Codec[${e.scalaName}] = skunk.codec.`enum`.`enum`(${e.scalaName}, Type("${e.name}"))
+            |  implicit val codec: Codec[${e.scalaName}] =
+            |    Codec.simple[${e.scalaName}](
+            |      a => a.value,
+            |      s => withValueEither(s).left.map(_.getMessage()),
+            |      Type("${e.name}"),
+            |    )
             |}
             |""".stripMargin,
       )
@@ -290,9 +295,7 @@ class PgCodeGen(
         pkgDir / "Constraint.scala",
         s"""|package $pkgName
             |
-            |final case class Constraint(name: String) {
-            |  def conflictClause: String = s"ON CONSTRAINT $$name"
-            |}
+            |final case class Constraint(name: String)
            """.stripMargin,
       ),
     ) ::: scalaEnums(enums)
@@ -343,44 +346,83 @@ class PgCodeGen(
         Left(s"Unsupported type of multiple components: ${x :: xs}")
     }
 
-  private def rowFileContent(table: Table): String = {
+  private def rowFileContent(table: Table): Option[String] = {
     import table._
 
-    val colsData = columns
+    def toClassPropsStr(cols: List[Column]) = cols
       .map(c => s"    ${c.scalaName}: ${c.scalaType}")
       .mkString("", ",\n", "")
 
-    val codecData = s"${columns.map(_.codecName).mkString(" ~ ")}"
+    def toCodecFieldsStr(cols: List[Column]) = s"${cols.map(_.codecName).mkString(" ~ ")}"
 
-    List(
-      s"package $pkgName",
-      "",
-      "import skunk.*",
-      "import skunk.codec.all.*",
-      // "import skunk.implicits.*",
-      "",
-      s"final case class $rowClassName(",
-      s"$colsData",
-      ")",
-      "",
-      s"object $rowClassName {",
-      s"  implicit val codec: Codec[$rowClassName] = ($codecData).gimap[$rowClassName]",
-      "}",
-    ).mkString("\n")
+    val rowUpdateClassData = primaryUniqueConstraint match {
+      case Some(cstr) =>
+        columns.filterNot(cstr.containsColumn) match {
+          case Nil => (Nil, Nil)
+          case updateCols =>
+            val colsData  = toClassPropsStr(updateCols)
+            val codecData = toCodecFieldsStr(updateCols)
+            (
+              updateCols,
+              List(
+                "",
+                s"final case class $rowUpdateClassName(",
+                s"$colsData",
+                ")",
+                "",
+                s"object $rowUpdateClassName {",
+                s"  implicit val codec: Codec[$rowUpdateClassName] = ($codecData).gimap[$rowUpdateClassName]",
+                "}",
+              ),
+            )
+        }
+
+      case None => (Nil, Nil)
+    }
+
+    def withUpdateStr = rowUpdateClassData match {
+      case (Nil, Nil) => ""
+      case (cols, _) =>
+        val updateProps = cols.map(_.scalaName).map(n => s"$n = $n").mkString("    ", ",\n    ", "")
+        List(
+          " {",
+          s"  def asUpdate: $rowUpdateClassName = $rowUpdateClassName(",
+          s"$updateProps",
+          "  )",
+          "",
+          s"  def withUpdate: ($rowClassName, $rowUpdateClassName) = (this, asUpdate)",
+          "",
+          "}",
+        ).mkString("\n")
+    }
+
+    columns.headOption.map { _ =>
+      val colsData  = toClassPropsStr(columns)
+      val codecData = toCodecFieldsStr(columns)
+      List(
+        s"package $pkgName",
+        "",
+        "import skunk.*",
+        "import skunk.codec.all.*",
+        "",
+        s"final case class $rowClassName(",
+        s"$colsData",
+        s")$withUpdateStr",
+        "",
+        s"object $rowClassName {",
+        s"  implicit val codec: Codec[$rowClassName] = ($codecData).gimap[$rowClassName]",
+        "}",
+        s"${rowUpdateClassData._2.mkString("\n")}",
+      ).mkString("\n")
+    }
   }
 
   private def tableFileContent(table: Table): String =
-    // val colsNames = (table.columns ::: table.autoIncColumns ::: table.autoIncFk)
-    //   .map(c =>
-    //     s"""        case object ${toScalaName(c.columnName)} extends Column[${c.scalaType}]("${c.columnName}")"""
-    //   )
-    //   .mkString("\n")
-
     (
       List(
         s"package $pkgName\n",
         "import skunk.*",
-        "import skunk.codec.all.*",
+        (if ((table.autoIncColumns ::: table.autoIncFk).nonEmpty) "import skunk.codec.all.*" else ""),
         "import skunk.implicits.*",
       ) :::
         List(
@@ -399,40 +441,40 @@ class PgCodeGen(
         )
     ).mkString("\n")
 
+  private def queryTypesStr(table: Table): (String, String) = {
+    import table._
+
+    if (autoIncFk.isEmpty) {
+      (rowClassName, s"${rowClassName}.codec")
+    } else {
+      val autoIncFkCodecs     = autoIncFk.map(_.pgType.name).mkString(" ~ ")
+      val autoIncFkScalaTypes = autoIncFk.map(_.scalaType).mkString(" ~ ")
+      (s"$autoIncFkScalaTypes ~ $rowClassName", s"$autoIncFkCodecs ~ ${rowClassName}.codec")
+    }
+  }
+
   private def writeStatements(table: Table): String = {
     import table._
 
-    val uniqueConstr: Option[UniqueConstraint] = constraints.collectFirst { case c: PrimaryKey =>
-      c
-    }.orElse {
-      constraints.collectFirst { case c: Constraint.Unique =>
-        c
-      }
-    }
+    val allCols                        = autoIncFk ::: columns
+    val allColNames                    = allCols.map(_.columnName).mkString(",")
+    val (insertScalaType, insertCodec) = queryTypesStr(table)
 
-    val allCols     = columns ::: autoIncFk
-    val allColNames = allCols.map(_.columnName)
-    val upsertQ = uniqueConstr.map { cstr =>
-      val updateCols     = allCols.filterNot(c => cstr.columnNames.contains(c.columnName))
-      val updateColNames = allColNames.filterNot(cstr.columnNames.contains)
+    val upsertQ = primaryUniqueConstraint.map { cstr =>
+      val updateCols     = allCols.filterNot(cstr.containsColumn)
+      val updateColNames = updateCols.map(_.columnName).mkString(",")
+      val upsertCodec    = s"$rowUpdateClassName.codec"
 
-      val intoCodecIntr =
-        updateCols
-          .map(_.codecName)
-          .map(t => s"$${$t}")
-          .mkString(" ~ ")
-      val updateScalaType = updateCols.map(_.scalaType).mkString(" ~ ")
-
-      s"""|  def upsertQuery: Command[$rowClassName ~ $updateScalaType] =
-          |    sql\"\"\"INSERT INTO #$$tableName (${allColNames.mkString(",")}) VALUES ($${${rowClassName}.codec}) 
-          |          ON CONFLICT ON CONSTRAINT (${cstr.name}) 
-          |          DO UPDATE SET (${updateColNames.mkString(",")})=($intoCodecIntr)\"\"\"".command""".stripMargin
+      s"""|  def upsertQuery: Command[$insertScalaType ~ $rowUpdateClassName] =
+          |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec}) 
+          |          ON CONFLICT ON CONSTRAINT ${cstr.name} 
+          |          DO UPDATE SET ($updateColNames)=($${$upsertCodec})\"\"\".command""".stripMargin
     }
 
     val insertQ =
-      s"""|  def insertQuery: Command[$rowClassName] =
-          |    sql\"\"\"INSERT INTO #$$tableName (${allColNames.mkString(",")}) 
-          |          VALUES ($${${rowClassName}.codec}) ON CONFLICT DO NOTHING\"\"\".command""".stripMargin
+      s"""|  def insertQuery: Command[$insertScalaType] =
+          |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) 
+          |          VALUES ($${$insertCodec}) ON CONFLICT DO NOTHING\"\"\".command""".stripMargin
 
     List(
       upsertQ.getOrElse(""),
@@ -444,27 +486,24 @@ class PgCodeGen(
     import table._
 
     val autoIncStm = if (autoIncColumns.nonEmpty) {
-
-      val types  = autoIncColumns.map(_.codecName).mkString(" ~ ")
-      val sTypes = autoIncColumns.map(_.scalaType).mkString(" ~ ")
-      val names  = autoIncColumns.map(_.columnName).mkString(", ")
+      val types       = autoIncColumns.map(_.codecName).mkString(" ~ ")
+      val sTypes      = autoIncColumns.map(_.scalaType).mkString(" ~ ")
+      val colNamesStr = (autoIncColumns ::: columns).map(_.columnName).mkString(", ")
 
       s"""
          |  def selectAllWithId[A](addClause: Fragment[A] = Fragment.empty): Query[A, $sTypes ~ $rowClassName] =
-         |    sql"SELECT $names,${columns
-          .map(_.columnName)
-          .mkString(",")} FROM #$$tableName $$addClause".query($types ~ ${rowClassName}.codec)
+         |    sql"SELECT $colNamesStr FROM #$$tableName $$addClause".query($types ~ ${rowClassName}.codec)
          """.stripMargin
     } else {
       ""
     }
 
+    val colNamesStr                   = (autoIncFk ::: columns).map(_.columnName).mkString(",")
+    val (queryReturnType, queryCodec) = queryTypesStr(table)
+
     val defaultStm = s"""
-                        |  def selectAll[A](addClause: Fragment[A] = Fragment.empty) =
-                        |    sql"SELECT ${columns
-                         .map(_.columnName)
-                         .mkString(",")} FROM #$$tableName $$addClause".query(${rowClassName}.codec)
-    """.stripMargin
+                        |  def selectAll[A](addClause: Fragment[A] = Fragment.empty): Query[A, $queryReturnType] =
+                        |    sql"SELECT $colNamesStr FROM #$$tableName $$addClause".query($queryCodec)""".stripMargin
 
     autoIncStm ++ defaultStm
   }
@@ -546,6 +585,8 @@ object PgCodeGen {
   }
   sealed trait UniqueConstraint extends Constraint {
     def columnNames: List[String]
+
+    def containsColumn(c: Column): Boolean = columnNames.contains(c.columnName)
   }
   object Constraint {
     final case class PrimaryKey(name: String, columnNames: List[String]) extends UniqueConstraint
@@ -564,8 +605,19 @@ object PgCodeGen {
     indexes: List[Index],
     autoIncFk: List[Column],
   ) {
-    val tableClassName: String = toTableClassName(name)
-    val rowClassName: String   = toRowClassName(name)
+    val tableClassName: String     = toTableClassName(name)
+    val rowClassName: String       = toRowClassName(name)
+    val rowUpdateClassName: String = toRowUpdateClassName(name)
+
+    val primaryUniqueConstraint: Option[UniqueConstraint] = constraints.collectFirst { case c: PrimaryKey =>
+      c
+    }.orElse {
+      constraints.collectFirst { case c: Constraint.Unique =>
+        c
+      }
+    }
+
+    def isInPrimaryConstraint(c: Column): Boolean = primaryUniqueConstraint.exists(_.containsColumn(c))
   }
 
   final case class ConstraintRow(
@@ -596,6 +648,9 @@ object PgCodeGen {
 
   private def toRowClassName(s: String): String =
     toCamelCase(s, capitalize = true) + "Row"
+
+  private def toRowUpdateClassName(s: String): String =
+    toCamelCase(s, capitalize = true) + "Update"
 
   private def toTableClassName(s: String): String =
     toCamelCase(s, capitalize = true) + "Table"

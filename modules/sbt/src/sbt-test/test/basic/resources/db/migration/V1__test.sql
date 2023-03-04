@@ -1,41 +1,33 @@
-CREATE TYPE rich_menu_template AS ENUM ('T1', 'T2', 'T3', 'T4', 'T5', 'T6');
+CREATE TYPE test_enum_type AS ENUM ('T1', 'T2', 'T3', 'T4', 'T5', 'T6');
 
+-- some comment
 CREATE TABLE test (
+  -- ignore this...
   id SERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   name text,
   name_2 varchar NOT NULL,
   number int,
-  template rich_menu_template
+  template test_enum_type
 );
 
-CREATE TABLE test_b (
-  key_a VARCHAR NOT NULL,
-  key_b VARCHAR NOT NULL,
-  val_1 VARCHAR NOT NULL,
-  val_2 VARCHAR NOT NULL,
-  val_3 VARCHAR NOT NULL,
-  val_4 VARCHAR NOT NULL,
-  val_5 VARCHAR NOT NULL,
-  val_6 VARCHAR NOT NULL,
-  val_7 VARCHAR NOT NULL,
-  val_8 VARCHAR NOT NULL,
-  val_9 VARCHAR NOT NULL,
-  val_10 VARCHAR NOT NULL,
-  val_11 VARCHAR NOT NULL,
-  val_12 VARCHAR NOT NULL,
-  val_13 VARCHAR NOT NULL,
-  val_14 VARCHAR NOT NULL,
-  val_15 VARCHAR NOT NULL,
-  val_16 VARCHAR NOT NULL,
-  val_17 VARCHAR NOT NULL,
-  val_18 VARCHAR NOT NULL,
-  val_19 VARCHAR NOT NULL,
-  val_20 VARCHAR NOT NULL,
-  val_21 VARCHAR NOT NULL,
-  val_22 VARCHAR NOT NULL,
-  val_23 VARCHAR NOT NULL,
-  val_24 VARCHAR NOT NULL,
-  val_25 VARCHAR NOT NULL,
-  PRIMARY KEY (key_a, key_b)
+CREATE TABLE test_ref_only (
+  test_id INT NOT NULL REFERENCES test(id) ON DELETE CASCADE
 );
 
+CREATE TABLE test_ref (
+  test_id INT NOT NULL REFERENCES test(id) ON DELETE CASCADE,
+  ref_name VARCHAR NOT NULL
+);
+
+CREATE TABLE test_ref_auto_pk (
+  id SERIAL PRIMARY KEY,
+  test_id INT NOT NULL REFERENCES test(id) ON DELETE CASCADE,
+  ref_name VARCHAR NOT NULL
+);
+
+CREATE TABLE test_ref_pk (
+  id VARCHAR PRIMARY KEY,
+  test_id INT NOT NULL REFERENCES test(id) ON DELETE CASCADE,
+  ref_name VARCHAR NOT NULL
+);
