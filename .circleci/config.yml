@@ -85,10 +85,10 @@ jobs:
       - restore_build
       - run:
           name: Generate code
-          command: sbt core/Test/runMain com.anymindgroup.RunPgCodeGen
+          command: sbt 'core/Test/runMain com.anymindgroup.RunPgCodeGen'
       - run:
           name: Test generated code
-          command: core/Test/runMain com.anymindgroup.GeneratedCodeTest  
+          command: sbt 'core/Test/runMain com.anymindgroup.GeneratedCodeTest'
       - store_dependencies
 
   test-sbt:
