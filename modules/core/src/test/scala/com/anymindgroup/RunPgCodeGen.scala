@@ -23,7 +23,7 @@ object RunPgCodeGen extends IOApp {
            sourceDir = (baseSrcDir / "resources" / "db" / "migration").toJava,
          ).run()
     testRunFile = scalaBasePkgDir / "GeneratedCodeTest._scala"
-    _          <- IO.whenA(testRunFile.exists)(IO(testRunFile.renameTo("GeneratedCodeTest.scala")).void)
+    _          <- IO.whenA(testRunFile.exists)(IO(testRunFile.copyTo(scalaBasePkgDir / "GeneratedCodeTest.scala", true)).void)
   } yield ExitCode.Success
 
 }
