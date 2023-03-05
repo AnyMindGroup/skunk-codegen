@@ -460,21 +460,40 @@ class PgCodeGen(
     val allColNames                    = allCols.map(_.columnName).mkString(",")
     val (insertScalaType, insertCodec) = queryTypesStr(table)
 
+    val returningStatement = autoIncColumns match {
+      case Nil => ""
+      case _   => autoIncColumns.map(_.columnName).mkString(" RETURNING ", ",", "")
+    }
+    val returningType = autoIncColumns.map(_.scalaType).mkString(" ~ ")
+    val fragmentType = autoIncColumns match {
+      case Nil => "command"
+      case _   => s"query(${autoIncColumns.map(_.pgType.name).mkString(" ~ ")})"
+    }
+
     val upsertQ = primaryUniqueConstraint.map { cstr =>
       val updateCols     = allCols.filterNot(cstr.containsColumn)
       val updateColNames = updateCols.map(_.columnName).mkString(",")
       val upsertCodec    = s"$rowUpdateClassName.codec"
 
-      s"""|  def upsertQuery: Command[$insertScalaType ~ $rowUpdateClassName] =
+      val queryType = autoIncColumns match {
+        case Nil => s"Command[$insertScalaType ~ $rowUpdateClassName]"
+        case _   => s"Query[$insertScalaType ~ $rowUpdateClassName, $returningType]"
+      }
+
+      s"""|  def upsertQuery: $queryType =
           |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec}) 
           |          ON CONFLICT ON CONSTRAINT ${cstr.name} 
-          |          DO UPDATE SET ($updateColNames)=($${$upsertCodec})\"\"\".command""".stripMargin
+          |          DO UPDATE SET ($updateColNames)=($${$upsertCodec})$returningStatement\"\"\".$fragmentType""".stripMargin
     }
 
+    val queryType = autoIncColumns match {
+      case Nil => s"Command[$insertScalaType]"
+      case _   => s"Query[$insertScalaType, $returningType]"
+    }
     val insertQ =
-      s"""|  def insertQuery: Command[$insertScalaType] =
+      s"""|  def insertQuery: $queryType =
           |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) 
-          |          VALUES ($${$insertCodec}) ON CONFLICT DO NOTHING\"\"\".command""".stripMargin
+          |          VALUES ($${$insertCodec}) ON CONFLICT DO NOTHING$returningStatement\"\"\".$fragmentType""".stripMargin
 
     List(
       upsertQ.getOrElse(""),

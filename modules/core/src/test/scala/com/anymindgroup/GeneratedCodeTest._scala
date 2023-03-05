@@ -74,7 +74,8 @@ object GeneratedCodeTest extends IOApp {
       for {
         // Test table
         p         <- s.prepare(TestTable.upsertQuery)
-        _         <- p.execute(testRow.withUpdate)
+        id        <- p.option(testRow.withUpdate)
+        _         <- IO.raiseWhen(id.isEmpty)(new Throwable("test A did not return a generated id"))
         all       <- s.execute(TestTable.selectAll())
         allWithId <- s.execute(TestTable.selectAllWithId())
         _         <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
