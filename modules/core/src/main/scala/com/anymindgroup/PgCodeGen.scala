@@ -29,6 +29,7 @@ class PgCodeGen(
   outputDir: JFile,
   pkgName: String,
   sourceDir: JFile,
+  excludeTables: List[String],
 ) {
   import PgCodeGen._
 
@@ -74,9 +75,14 @@ class PgCodeGen(
   }
 
   private def getColumns(s: Session[IO], enums: Enums): IO[TableMap[Column]] = {
+    val filterFragment: Fragment[Void] = excludeTables match {
+      case Nil => Fragment.empty
+      case _   => sql" AND table_name NOT IN (#${excludeTables.mkString("'", "','", "'")})"
+    }
+
     val q: Query[Void, String ~ String ~ String ~ String ~ Option[String]] =
       sql"""SELECT table_name,column_name,udt_name,is_nullable,column_default
-            FROM information_schema.COLUMNS WHERE table_schema = 'public' AND table_name NOT SIMILAR TO '%\_p\d{1}'
+            FROM information_schema.COLUMNS WHERE table_schema = 'public'$filterFragment
             """.query(name ~ name ~ name ~ varchar(3) ~ varchar.opt)
 
     s.execute(q.map { case tName ~ colName ~ udt ~ nullable ~ default =>

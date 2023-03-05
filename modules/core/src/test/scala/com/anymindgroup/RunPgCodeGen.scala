@@ -21,6 +21,7 @@ object RunPgCodeGen extends IOApp {
            outputDir = (baseSrcDir / "scala").toJava,
            pkgName = "com.anymindgroup.generated",
            sourceDir = (baseSrcDir / "resources" / "db" / "migration").toJava,
+           excludeTables = List("unsupported_yet"),
          ).run()
     testRunFile = scalaBasePkgDir / "GeneratedCodeTest._scala"
     _          <- IO.whenA(testRunFile.exists)(IO(testRunFile.copyTo(scalaBasePkgDir / "GeneratedCodeTest.scala", true)).void)

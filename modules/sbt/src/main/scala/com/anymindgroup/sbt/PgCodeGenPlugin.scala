@@ -65,6 +65,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           pkgName = pgCodeGenOutputPackage.value,
           sourceDir = pgCodeGenSqlSourceDir.value,
           useDocker = pgCodeGenUseDocker.value,
+          excludeTables = pgCodeGenExcludedTables.value
         ).unsafeRunSync(true)
       },
       Compile / sourceGenerators += Def.task {
@@ -78,6 +79,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           pkgName = pgCodeGenOutputPackage.value,
           sourceDir = pgCodeGenSqlSourceDir.value,
           useDocker = pgCodeGenUseDocker.value,
+          excludeTables = pgCodeGenExcludedTables.value
         ).unsafeRunSync()
       }.taskValue,
     )
