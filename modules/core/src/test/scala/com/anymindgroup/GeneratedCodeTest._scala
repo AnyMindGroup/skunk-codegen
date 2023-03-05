@@ -14,6 +14,7 @@ import skunk.util.Typer
 import java.time.OffsetDateTime
 import better.files.File
 import skunk.*
+import skunk.codec.all.*
 import skunk.util.Origin
 import skunk.{Command => SqlCommand}
 import cats.implicits.*
@@ -83,6 +84,11 @@ object GeneratedCodeTest extends IOApp {
         _           <- upsertCmd.execute(testBRow.withUpdate)
         allLoaded   <- s.execute(TestBTable.selectAll())
         _           <- IO.raiseWhen(List(testBRow) != allLoaded)(new Throwable("test B result not equal"))
+        loadByIdQ   <- s.prepare(TestBTable.selectAll(sql"WHERE key_a = ${varchar} AND key_b = ${varchar}"))
+        loadedById  <- loadByIdQ.option(testBRow.keyA ~ testBRow.keyB)
+        _           <- IO.raiseWhen(Some(testBRow) != loadedById)(new Throwable("test B result by id not equal"))
+        notFoundRes <- s.execute(TestBTable.selectAll(sql"WHERE key_a = 'not_existing'"))
+        _           <- IO.raiseWhen(notFoundRes.nonEmpty)(new Throwable("test B query result is empty"))
         _           <- upsertCmd.execute(testBRow.copy(val1 = "val1_update").withUpdate)
         afterUpdate <- s.execute(TestBTable.selectAll())
         _           <- IO.raiseWhen(afterUpdate.length != 1)(new Throwable("test B result unexpected length"))
