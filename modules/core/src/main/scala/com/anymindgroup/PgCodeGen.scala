@@ -267,12 +267,20 @@ class PgCodeGen(
       table.constraints.map(c => s"""val ${toScalaName(c.name)} = Constraint(name = "${c.name}")""")
     }.mkString("  object constraints {\n    ", "\n    ", "\n  }")
 
+    val arrayCodec = s"""|  implicit class ListCodec[A](arrCodec: skunk.Codec[skunk.data.Arr[A]]) {
+                         |    def _list(implicit factory: scala.collection.compat.Factory[A, List[A]]): skunk.Codec[List[A]] = {
+                         |      arrCodec.imap(arr => arr.flattenTo(factory))(xs => skunk.data.Arr.fromFoldable(xs))
+                         |    }
+                         |  }""".stripMargin
+
     List(
       (
         pkgDir / "package.scala",
         s"""|package ${pkgName.split('.').dropRight(1).mkString(".")}
             |
             |package object ${pkgName.split('.').last} {
+            |
+            |$arrayCodec
             |
             |$indexes
             |
@@ -487,8 +495,8 @@ class PgCodeGen(
       }
 
       s"""|  def upsertQuery: $queryType =
-          |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec}) 
-          |          ON CONFLICT ON CONSTRAINT ${cstr.name} 
+          |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})
+          |          ON CONFLICT ON CONSTRAINT ${cstr.name}
           |          DO UPDATE SET ($updateColNames)=($${$upsertCodec})$returningStatement\"\"\".$fragmentType""".stripMargin
     }
 
@@ -498,7 +506,7 @@ class PgCodeGen(
     }
     val insertQ =
       s"""|  def insertQuery: $queryType =
-          |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) 
+          |    sql\"\"\"INSERT INTO #$$tableName ($allColNames)
           |          VALUES ($${$insertCodec}) ON CONFLICT DO NOTHING$returningStatement\"\"\".$fragmentType""".stripMargin
 
     List(
@@ -591,9 +599,14 @@ object PgCodeGen {
   ) {
     val scalaName: String = toScalaName(columnName)
 
+    def isArr = pgType.componentTypes.nonEmpty
+
     val codecName: String =
-      ((if (isEnum) s"${toScalaName(pgType.name).capitalize}.codec" else pgType.name) + (if (isNullable) ".opt"
-                                                                                         else ""))
+      (
+        (if (isEnum) s"${toScalaName(pgType.name).capitalize}.codec" else pgType.name) +
+          (if (isArr) "._list" else "") +
+          (if (isNullable) ".opt" else "")
+      )
   }
 
   final case class ColumnRef(fromColName: String, toColName: String, toTableName: String)

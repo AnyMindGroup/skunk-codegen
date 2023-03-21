@@ -69,6 +69,8 @@ object GeneratedCodeTest extends IOApp {
         val23 = "val23",
         val24 = "val24",
         val25 = "val25",
+        val26 = List("val26"),
+        val27 = Some(List(1, 2))
       )
 
       for {
