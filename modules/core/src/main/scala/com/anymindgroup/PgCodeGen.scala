@@ -586,7 +586,7 @@ object PgCodeGen {
     val scalaName: String = toScalaName(name).capitalize
   }
   final case class EnumValue(name: String) {
-    val scalaName: String = toScalaName(name).capitalize
+    val scalaName: String = toScalaName(name.toLowerCase).capitalize
   }
 
   final case class Column(

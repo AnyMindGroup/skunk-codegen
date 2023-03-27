@@ -36,7 +36,7 @@ object GeneratedCodeTest extends IOApp {
       val testRow = TestRow(
         number = Some(1),
         createdAt = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS),
-        template = Some(TestEnumType.T1),
+        template = Some(TestEnumType.T1One),
         name = Some("name"),
         name2 = "name2",
       )
@@ -99,6 +99,8 @@ object GeneratedCodeTest extends IOApp {
           IO.raiseWhen(afterUpdate.headOption.map(_.val1) != Some("val1_update"))(
             new Throwable("test B result missing update")
           )
+        // Check Enum variable format
+        _ = Seq(TestEnumType.T1One, TestEnumType.T2Two, TestEnumType.T3Three, TestEnumType.T4Four, TestEnumType.T5Five, TestEnumType.T6six, TestEnumType.MultipleWordEnum)
         _ <- IO.println("Test successful!")
       } yield ()
 

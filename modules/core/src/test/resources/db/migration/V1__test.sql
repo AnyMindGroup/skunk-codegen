@@ -1,4 +1,4 @@
-CREATE TYPE test_enum_type AS ENUM ('T1', 'T2', 'T3', 'T4', 'T5', 'T6');
+CREATE TYPE test_enum_type AS ENUM ('T1_ONE', 't2_two', 't3_Three', 'T4_FOUR', 'T5_FIVE', 'T6Six', 'MULTIPLE_WORD_ENUM');
 
 -- some comment
 CREATE TABLE test (
