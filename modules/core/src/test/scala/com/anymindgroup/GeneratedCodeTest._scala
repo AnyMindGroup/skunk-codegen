@@ -70,7 +70,7 @@ object GeneratedCodeTest extends IOApp {
         val24 = "val24",
         val25 = "val25",
         val26 = List("val26"),
-        val27 = Some(List(1, 2))
+        val27 = Some(List(1, 2)),
       )
 
       for {
@@ -82,6 +82,18 @@ object GeneratedCodeTest extends IOApp {
         allWithId <- s.execute(TestTable.selectAllWithId())
         _         <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
         _         <- IO.raiseWhen(allWithId.map(_._2) != List(testRow))(new Throwable("test A result with id not equal"))
+        idAndName2 = TestTable.column.id ~ TestTable.column.name_2
+        xs <- s.execute(
+                sql"""SELECT #${idAndName2
+                    .withAlias("t")
+                    .aliasedName},#${TestTable.column.name.withAlias("t").fullName} FROM #${TestTable.tableName} t"""
+                  .query(idAndName2.codec ~ TestTable.column.name.codec)
+              )
+        _ <- IO.raiseWhen(xs != List((id.get, testRow.name2) -> testRow.name))(
+               new Throwable("test A select fields not equal")
+             )
+        all2 <- s.execute(TestTable.select(TestTable.all))
+        _    <- IO.raiseWhen(all2 != List(testRow))(new Throwable("test A select all fields not equal"))
         // TestB table
         upsertCmd   <- s.prepare(TestBTable.upsertQuery)
         _           <- upsertCmd.execute(testBRow.withUpdate)
@@ -100,7 +112,60 @@ object GeneratedCodeTest extends IOApp {
             new Throwable("test B result missing update")
           )
         // Check Enum variable format
-        _ = Seq(TestEnumType.T1One, TestEnumType.T2Two, TestEnumType.T3Three, TestEnumType.T4Four, TestEnumType.T5Five, TestEnumType.T6six, TestEnumType.MultipleWordEnum)
+        _ = Seq(
+              TestEnumType.T1One,
+              TestEnumType.T2Two,
+              TestEnumType.T3Three,
+              TestEnumType.T4Four,
+              TestEnumType.T5Five,
+              TestEnumType.T6six,
+              TestEnumType.MultipleWordEnum,
+            )
+        _ <- s.execute(sql"TRUNCATE TABLE #${TestBTable.tableName}".command)
+
+        _         <- s.execute(TestBTable.insert0(TestBTable.all), testBRow)
+        allBTable <- s.execute(TestBTable.select(TestBTable.all))
+        _         <- IO.raiseWhen(allBTable != List(testBRow))(new Throwable("test B not equal"))
+        _ <-
+          s.option(
+            TestBTable.select(
+              TestBTable.all,
+              sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
+            ),
+            testBRow.keyA ~ testBRow.keyB,
+          ).flatMap(loadedById =>
+            IO.raiseWhen(Some(testBRow) != loadedById)(new Throwable("test B result by id not equal"))
+          )
+
+        _ <-
+          s.execute(
+            TestBTable.select(
+              TestBTable.column.key_a ~ TestBTable.column.key_b ~ TestBTable.column.val_1,
+              sql"WHERE key_a = 'not_existing'",
+            )
+          ).flatMap(notFoundRes => IO.raiseWhen(notFoundRes.nonEmpty)(new Throwable("test B query result is empty")))
+
+        updatingFields =
+          TestBTable.column.val_27(None) ~ TestBTable.column.val_2("updated_val_2") ~ TestBTable.column.val_14(
+            "updated_val_14"
+          )
+        updateQ = sql"""
+        ON CONFLICT ON CONSTRAINT #${generated.constraints.testBPkey.name} DO UPDATE SET
+        (#${updatingFields.name}) = (${updatingFields.codec})
+        """
+        _ <- s.execute(TestBTable.insert(TestBTable.all, updateQ), testBRow ~ updatingFields.value)
+        _ <-
+          s.option(
+            TestBTable.select(
+              TestBTable.all,
+              sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
+            ),
+            testBRow.keyA ~ testBRow.keyB,
+          ).flatMap(loadedById =>
+            IO.raiseWhen(
+              Some(testBRow.copy(val27 = None, val2 = "updated_val_2", val14 = "updated_val_14")) != loadedById
+            )(new Throwable("test B result missing update"))
+          )
         _ <- IO.println("Test successful!")
       } yield ()
 

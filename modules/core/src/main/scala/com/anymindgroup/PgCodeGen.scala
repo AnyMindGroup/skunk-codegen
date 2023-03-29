@@ -18,6 +18,7 @@ import sys.process._
 import better.files._
 import java.time.Instant
 import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
+import cats.data.NonEmptyList
 
 class PgCodeGen(
   host: String,
@@ -145,6 +146,8 @@ class PgCodeGen(
     )
     .use { s =>
       for {
+        _ <-
+          IO.raiseWhen(sourceFiles.isEmpty)(new Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
         _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
         _     <- s.execute(sql"CREATE SCHEMA public;".command)
         _     <- runSqlSource(s)
@@ -267,18 +270,19 @@ class PgCodeGen(
       table.constraints.map(c => s"""val ${toScalaName(c.name)} = Constraint(name = "${c.name}")""")
     }.mkString("  object constraints {\n    ", "\n    ", "\n  }")
 
-    val arrayCodec = s"""|  implicit class ListCodec[A](arrCodec: skunk.Codec[skunk.data.Arr[A]]) {
-                         |    def _list(implicit factory: scala.collection.compat.Factory[A, List[A]]): skunk.Codec[List[A]] = {
-                         |      arrCodec.imap(arr => arr.flattenTo(factory))(xs => skunk.data.Arr.fromFoldable(xs))
-                         |    }
-                         |  }""".stripMargin
-
+    val arrayCodec =
+      s"""|  implicit class ListCodec[A](arrCodec: skunk.Codec[skunk.data.Arr[A]]) {
+          |    def _list(implicit factory: scala.collection.compat.Factory[A, List[A]]): skunk.Codec[List[A]] = {
+          |      arrCodec.imap(arr => arr.flattenTo(factory))(xs => skunk.data.Arr.fromFoldable(xs))
+          |    }
+          |  }""".stripMargin
+    val pkgLastPart = pkgName.split('.').last
     List(
       (
         pkgDir / "package.scala",
         s"""|package ${pkgName.split('.').dropRight(1).mkString(".")}
             |
-            |package object ${pkgName.split('.').last} {
+            |package object ${pkgLastPart} {
             |
             |$arrayCodec
             |
@@ -311,6 +315,33 @@ class PgCodeGen(
             |
             |final case class Constraint(name: String)
            """.stripMargin,
+      ),
+      (
+        pkgDir / "Cols.scala",
+        s"""|package $pkgName
+            |import skunk.*
+            |import skunk.implicits.*
+            |import cats.data.NonEmptyList
+            |import cats.implicits.*
+            |
+            |final case class Cols[A] private[$pkgLastPart] (names: NonEmptyList[String], codec: Codec[A], tableAlias: String)
+            |    extends (A => AppliedCol[A]) {
+            |  def name: String                     = names.intercalate(",")
+            |  def fullName: String                 = names.map(n => s"$${tableAlias}.$$n").intercalate(",")
+            |  def aliasedName: String              = names.map(name => s"$${tableAlias}.$${name} $${tableAlias}__$$name").intercalate(",")
+            |  def withAlias(alias: String)         = this.copy(tableAlias = alias)
+            |  def ~[B](that: Cols[B]): Cols[A ~ B] = Cols(this.names ::: that.names, this.codec ~ that.codec, this.tableAlias)
+            |  def apply(a: A): AppliedCol[A]       = AppliedCol(this, a)
+            |}
+            |
+            |final case class AppliedCol[A] (cols: Cols[A], value: A) {
+            |  def name     = cols.name
+            |  def fullName = cols.fullName
+            |  def codec    = cols.codec
+            |
+            |  def ~[B] (that: AppliedCol[B]): AppliedCol[A ~ B] = AppliedCol(this.cols ~ that.cols, this.value ~ that.value)
+            |}
+            |""".stripMargin,
       ),
     ) ::: scalaEnums(enums)
   }
@@ -431,22 +462,25 @@ class PgCodeGen(
     }
   }
 
-  private def tableFileContent(table: Table): String =
+  private def tableFileContent(table: Table): String = {
+    val (maybeAllCol, cols) = tableColumns(table)
     (
       List(
         s"package $pkgName\n",
         "import skunk.*",
-        (if ((table.autoIncColumns ::: table.autoIncFk).nonEmpty) "import skunk.codec.all.*" else ""),
+        "import skunk.codec.all.*",
         "import skunk.implicits.*",
+        "import cats.data.NonEmptyList",
       ) :::
         List(
           "",
           s"class ${table.tableClassName}(val tableName: String) {",
           s"  def withPrefix(prefix: String): ${table.tableClassName} = new ${table.tableClassName}(prefix + tableName)",
           "",
-          // "  object columns {",
-          // s"$colsNames",
-          // "  }",
+          maybeAllCol.getOrElse(""),
+          "  object column {",
+          s"$cols",
+          "  }",
           writeStatements(table),
           selectAllStatement(table),
           "}",
@@ -454,6 +488,7 @@ class PgCodeGen(
           s"""object ${table.tableClassName} extends ${table.tableClassName}("${table.name}")""",
         )
     ).mkString("\n")
+  }
 
   private def queryTypesStr(table: Table): (String, String) = {
     import table._
@@ -509,10 +544,44 @@ class PgCodeGen(
           |    sql\"\"\"INSERT INTO #$$tableName ($allColNames)
           |          VALUES ($${$insertCodec}) ON CONFLICT DO NOTHING$returningStatement\"\"\".$fragmentType""".stripMargin
 
+    val insertCol =
+      s"""|
+          |  def insert[A](cols: Cols[A]): Command[A] =
+          |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
+          |          VALUES ($${cols.codec})\"\"\".command
+          |
+          |  def insert0[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING")(implicit
+          |    ev: Void =:= B
+          |  ): Command[A] =
+          |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
+          |          VALUES ($${cols.codec}) $$rest\"\"\".command.contramap[A](a => a ~ ev.apply(Void))
+          |
+          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[A ~ B] =
+          |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
+          |          VALUES ($${cols.codec}) $$rest\"\"\".command
+          |""".stripMargin
     List(
       upsertQ.getOrElse(""),
       insertQ,
+      insertCol,
     ).mkString("\n\n")
+  }
+
+  private def tableColumns(table: Table): (Option[String], String) = {
+    val allCols = table.autoIncColumns ::: table.autoIncFk ::: table.columns
+    val cols =
+      allCols.map(column => s"""    val ${column.columnName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, "${table.name}")""")
+
+    val allCol = NonEmptyList
+      .fromList(table.columns.map(_.columnName))
+      .map { xs =>
+        val s = xs.map(x => s""""$x"""").intercalate(",")
+        s"""|
+            |  val all = Cols(NonEmptyList.of($s), ${table.rowClassName}.codec, "${table.name}")
+            |""".stripMargin
+      }
+
+    allCol -> cols.mkString("\n")
   }
 
   private def selectAllStatement(table: Table): String = {
@@ -526,6 +595,7 @@ class PgCodeGen(
       s"""
          |  def selectAllWithId[A](addClause: Fragment[A] = Fragment.empty): Query[A, $sTypes ~ $rowClassName] =
          |    sql"SELECT $colNamesStr FROM #$$tableName $$addClause".query($types ~ ${rowClassName}.codec)
+         |
          """.stripMargin
     } else {
       ""
@@ -536,9 +606,14 @@ class PgCodeGen(
 
     val defaultStm = s"""
                         |  def selectAll[A](addClause: Fragment[A] = Fragment.empty): Query[A, $queryReturnType] =
-                        |    sql"SELECT $colNamesStr FROM #$$tableName $$addClause".query($queryCodec)""".stripMargin
+                        |    sql"SELECT $colNamesStr FROM #$$tableName $$addClause".query($queryCodec)
+                        |
+                        |""".stripMargin
 
-    autoIncStm ++ defaultStm
+    val selectCol = s"""|  def select[A, B](cols: Cols[A], rest: Fragment[B] = Fragment.empty): Query[B, A] =
+                        |    sql"SELECT #$${cols.name} FROM #$$tableName $$rest".query(cols.codec)
+                        |""".stripMargin
+    autoIncStm ++ defaultStm ++ selectCol
   }
 
   private def lastModified(files: List[File]): Option[Instant] =
