@@ -329,6 +329,7 @@ class PgCodeGen(
             |  def name: String                     = names.intercalate(",")
             |  def fullName: String                 = names.map(n => s"$${tableAlias}.$$n").intercalate(",")
             |  def aliasedName: String              = names.map(name => s"$${tableAlias}.$${name} $${tableAlias}__$$name").intercalate(",")
+            |  @deprecated("Use withAlias of table instead of making alias for every column")
             |  def withAlias(alias: String)         = this.copy(tableAlias = alias)
             |  def ~[B](that: Cols[B]): Cols[A ~ B] = Cols(this.names ::: that.names, this.codec ~ that.codec, this.tableAlias)
             |  def apply(a: A): AppliedCol[A]       = AppliedCol(this, a)
@@ -476,6 +477,7 @@ class PgCodeGen(
           "",
           s"class ${table.tableClassName}(val tableName: String) {",
           s"  def withPrefix(prefix: String): ${table.tableClassName} = new ${table.tableClassName}(prefix + tableName)",
+          s"  def withAlias(alias: String): ${table.tableClassName}   = new ${table.tableClassName}(alias)",
           "",
           maybeAllCol.getOrElse(""),
           "  object column {",
@@ -570,14 +572,16 @@ class PgCodeGen(
   private def tableColumns(table: Table): (Option[String], String) = {
     val allCols = table.autoIncColumns ::: table.autoIncFk ::: table.columns
     val cols =
-      allCols.map(column => s"""    val ${column.columnName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, "${table.name}")""")
+      allCols.map(column =>
+        s"""    val ${column.columnName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, tableName)"""
+      )
 
     val allCol = NonEmptyList
       .fromList(table.columns.map(_.columnName))
       .map { xs =>
         val s = xs.map(x => s""""$x"""").intercalate(",")
         s"""|
-            |  val all = Cols(NonEmptyList.of($s), ${table.rowClassName}.codec, "${table.name}")
+            |  val all = Cols(NonEmptyList.of($s), ${table.rowClassName}.codec, tableName)
             |""".stripMargin
       }
 

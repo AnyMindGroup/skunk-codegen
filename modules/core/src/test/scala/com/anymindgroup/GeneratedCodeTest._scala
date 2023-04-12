@@ -72,23 +72,22 @@ object GeneratedCodeTest extends IOApp {
         val26 = List("val26"),
         val27 = Some(List(1, 2)),
       )
-
       for {
         // Test table
-        p         <- s.prepare(TestTable.upsertQuery)
-        id        <- p.option(testRow.withUpdate)
-        _         <- IO.raiseWhen(id.isEmpty)(new Throwable("test A did not return a generated id"))
-        all       <- s.execute(TestTable.selectAll())
-        allWithId <- s.execute(TestTable.selectAllWithId())
-        _         <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
-        _         <- IO.raiseWhen(allWithId.map(_._2) != List(testRow))(new Throwable("test A result with id not equal"))
-        idAndName2 = TestTable.column.id ~ TestTable.column.name_2
-        xs <- s.execute(
-                sql"""SELECT #${idAndName2
-                    .withAlias("t")
-                    .aliasedName},#${TestTable.column.name.withAlias("t").fullName} FROM #${TestTable.tableName} t"""
-                  .query(idAndName2.codec ~ TestTable.column.name.codec)
-              )
+        p               <- s.prepare(TestTable.upsertQuery)
+        id              <- p.option(testRow.withUpdate)
+        _               <- IO.raiseWhen(id.isEmpty)(new Throwable("test A did not return a generated id"))
+        all             <- s.execute(TestTable.selectAll())
+        allWithId       <- s.execute(TestTable.selectAllWithId())
+        _               <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
+        _               <- IO.raiseWhen(allWithId.map(_._2) != List(testRow))(new Throwable("test A result with id not equal"))
+        aliasedTestTable = TestTable.withAlias("t")
+        idAndName2       = aliasedTestTable.column.id ~ aliasedTestTable.column.name_2
+        xs <-
+          s.execute(
+            sql"""SELECT #${idAndName2.aliasedName},#${aliasedTestTable.column.name.fullName} FROM #${TestTable.tableName} #${aliasedTestTable.tableName}"""
+              .query(idAndName2.codec ~ TestTable.column.name.codec)
+          )
         _ <- IO.raiseWhen(xs != List((id.get, testRow.name2) -> testRow.name))(
                new Throwable("test A select fields not equal")
              )
