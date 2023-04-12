@@ -329,7 +329,7 @@ class PgCodeGen(
             |  def name: String                     = names.intercalate(",")
             |  def fullName: String                 = names.map(n => s"$${tableAlias}.$$n").intercalate(",")
             |  def aliasedName: String              = names.map(name => s"$${tableAlias}.$${name} $${tableAlias}__$$name").intercalate(",")
-            |  @deprecated("Use withAlias of table instead of making alias for every column")
+            |  @deprecated("Use withAlias of table instead of making alias for every column", "0.0.13")
             |  def withAlias(alias: String)         = this.copy(tableAlias = alias)
             |  def ~[B](that: Cols[B]): Cols[A ~ B] = Cols(this.names ::: that.names, this.codec ~ that.codec, this.tableAlias)
             |  def apply(a: A): AppliedCol[A]       = AppliedCol(this, a)
