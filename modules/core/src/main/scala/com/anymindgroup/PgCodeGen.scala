@@ -626,11 +626,12 @@ class PgCodeGen(
       case fs  => Some(fs.map(f => f.lastModifiedTime).max)
     }
 
-  // TODO: not correct in circle-ci after case restore
   private def outputFilesOutdated: Boolean = (for {
     s <- lastModified(sourceFiles)
     o <- lastModified(if (pkgDir.exists) pkgDir.list.toList else Nil)
-  } yield o.isBefore(s)).getOrElse(true)
+    // can't rely on timestamps when running in CI
+    isNotCI = sys.env.get("CI").isEmpty
+  } yield isNotCI && o.isBefore(s)).getOrElse(true)
 
   def run(forceRegeneration: Boolean = false): IO[List[JFile]] =
     (if ((forceRegeneration || (!pkgDir.exists() || outputFilesOutdated))) {
