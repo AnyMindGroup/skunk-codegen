@@ -71,6 +71,7 @@ object GeneratedCodeTest extends IOApp {
         val25 = "val25",
         val26 = List("val26"),
         val27 = Some(List(1, 2)),
+        date = None,
       )
       for {
         // Test table

@@ -28,5 +28,6 @@ CREATE TABLE test_b (
   val_25 VARCHAR NOT NULL,
   val_26 VARCHAR[] NOT NULL,
   val_27 INT[],
+  date DATE,
   PRIMARY KEY (key_a, key_b)
 );
