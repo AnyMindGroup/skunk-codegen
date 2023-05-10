@@ -449,7 +449,6 @@ class PgCodeGen(
         s"package $pkgName",
         "",
         "import skunk.*",
-        "import skunk.codec.all.*",
         "",
         s"final case class $rowClassName(",
         s"$colsData",
@@ -469,7 +468,6 @@ class PgCodeGen(
       List(
         s"package $pkgName\n",
         "import skunk.*",
-        "import skunk.codec.all.*",
         "import skunk.implicits.*",
         "import cats.data.NonEmptyList",
       ) :::
@@ -498,7 +496,7 @@ class PgCodeGen(
     if (autoIncFk.isEmpty) {
       (rowClassName, s"${rowClassName}.codec")
     } else {
-      val autoIncFkCodecs     = autoIncFk.map(_.pgType.name).mkString(" ~ ")
+      val autoIncFkCodecs     = autoIncFk.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" ~ ")
       val autoIncFkScalaTypes = autoIncFk.map(_.scalaType).mkString(" ~ ")
       (s"$autoIncFkScalaTypes ~ $rowClassName", s"$autoIncFkCodecs ~ ${rowClassName}.codec")
     }
@@ -518,7 +516,7 @@ class PgCodeGen(
     val returningType = autoIncColumns.map(_.scalaType).mkString(" ~ ")
     val fragmentType = autoIncColumns match {
       case Nil => "command"
-      case _   => s"query(${autoIncColumns.map(_.pgType.name).mkString(" ~ ")})"
+      case _   => s"query(${autoIncColumns.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" ~ ")})"
     }
 
     val upsertQ = primaryUniqueConstraint.map { cstr =>
@@ -683,7 +681,7 @@ object PgCodeGen {
 
     val codecName: String =
       (
-        (if (isEnum) s"${toScalaName(pgType.name).capitalize}.codec" else pgType.name) +
+        (if (isEnum) s"${toScalaName(pgType.name).capitalize}.codec" else s"skunk.codec.all.${pgType.name}") +
           (if (isArr) "._list" else "") +
           (if (isNullable) ".opt" else "")
       )
