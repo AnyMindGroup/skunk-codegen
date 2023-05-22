@@ -399,25 +399,36 @@ class PgCodeGen(
       .map(c => s"    ${c.scalaName}: ${c.scalaType}")
       .mkString("", ",\n", "")
 
+    def toUpdateClassPropsStr(cols: List[Column]) = cols
+      .map(c => s"    ${c.scalaName}: Option[${c.scalaType}]")
+      .mkString("", ",\n", "")
+
     def toCodecFieldsStr(cols: List[Column]) = s"${cols.map(_.codecName).mkString(" ~ ")}"
+
+    def toUpdateFragment(cols: List[Column]) = {
+      def toOptFrStr(c: Column) = s"""${c.scalaName}.map(sql"${c.columnName}=$${${c.codecName}}".apply(_))"""
+      s"""
+        def fragment: AppliedFragment = List(
+          ${cols.map(toOptFrStr(_)).mkString(",\n")}
+        ).flatten.intercalate(void",")
+      """
+    }
 
     val rowUpdateClassData = primaryUniqueConstraint match {
       case Some(cstr) =>
         columns.filterNot(cstr.containsColumn) match {
           case Nil => (Nil, Nil)
           case updateCols =>
-            val colsData  = toClassPropsStr(updateCols)
-            val codecData = toCodecFieldsStr(updateCols)
+            val colsData     = toUpdateClassPropsStr(updateCols)
+            val fragmentData = toUpdateFragment(updateCols)
             (
               updateCols,
               List(
                 "",
                 s"final case class $rowUpdateClassName(",
                 s"$colsData",
-                ")",
-                "",
-                s"object $rowUpdateClassName {",
-                s"  implicit val codec: Codec[$rowUpdateClassName] = ($codecData).gimap[$rowUpdateClassName]",
+                ") {",
+                fragmentData,
                 "}",
               ),
             )
@@ -426,17 +437,23 @@ class PgCodeGen(
       case None => (Nil, Nil)
     }
 
+    def withImportsStr = rowUpdateClassData match {
+      case (Nil, Nil) => ""
+      case (_, _)     => List("import skunk.implicits.*", "import cats.implicits.*").mkString("\n"),
+    }
+
     def withUpdateStr = rowUpdateClassData match {
       case (Nil, Nil) => ""
       case (cols, _) =>
-        val updateProps = cols.map(_.scalaName).map(n => s"$n = $n").mkString("    ", ",\n    ", "")
+        val updateProps = cols.map(_.scalaName).map(n => s"$n = Some($n)").mkString("    ", ",\n    ", "")
         List(
           " {",
           s"  def asUpdate: $rowUpdateClassName = $rowUpdateClassName(",
           s"$updateProps",
           "  )",
           "",
-          s"  def withUpdate: ($rowClassName, $rowUpdateClassName) = (this, asUpdate)",
+          s"  def withUpdateAll: ($rowClassName, AppliedFragment) = (this, asUpdate.fragment)",
+          s"  def withUpdate(f: $rowUpdateClassName => $rowUpdateClassName): ($rowClassName, AppliedFragment) = (this, f(asUpdate).fragment)",
           "",
           "}",
         ).mkString("\n")
@@ -449,6 +466,7 @@ class PgCodeGen(
         s"package $pkgName",
         "",
         "import skunk.*",
+        withImportsStr,
         "",
         s"final case class $rowClassName(",
         s"$colsData",
@@ -520,19 +538,15 @@ class PgCodeGen(
     }
 
     val upsertQ = primaryUniqueConstraint.map { cstr =>
-      val updateCols     = allCols.filterNot(cstr.containsColumn)
-      val updateColNames = updateCols.map(_.columnName).mkString(",")
-      val upsertCodec    = s"$rowUpdateClassName.codec"
-
       val queryType = autoIncColumns match {
-        case Nil => s"Command[$insertScalaType ~ $rowUpdateClassName]"
-        case _   => s"Query[$insertScalaType ~ $rowUpdateClassName, $returningType]"
+        case Nil => s"Command[$insertScalaType ~ updateFr.A]"
+        case _   => s"Query[$insertScalaType ~ updateFr.A, $returningType]"
       }
 
-      s"""|  def upsertQuery: $queryType =
+      s"""|  def upsertQuery(updateFr: AppliedFragment): $queryType =
           |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})
           |          ON CONFLICT ON CONSTRAINT ${cstr.name}
-          |          DO UPDATE SET ($updateColNames)=($${$upsertCodec})$returningStatement\"\"\".$fragmentType""".stripMargin
+          |          DO UPDATE SET $${updateFr.fragment}$returningStatement\"\"\".$fragmentType""".stripMargin
     }
 
     val queryType = autoIncColumns match {

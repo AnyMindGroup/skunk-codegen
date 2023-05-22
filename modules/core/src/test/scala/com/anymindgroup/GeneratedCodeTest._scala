@@ -33,13 +33,13 @@ object GeneratedCodeTest extends IOApp {
       strategy = Typer.Strategy.SearchPath, // to include custom types like enums,
     )
     .use { s =>
-      val testRow = TestRow(
+      val (testRow, testUpdateFr) = TestRow(
         number = Some(1),
         createdAt = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS),
         template = Some(TestEnumType.T1One),
         name = Some("name"),
         name2 = "name2",
-      )
+      ).withUpdateAll
 
       val testBRow = TestBRow(
         keyA = "keyA",
@@ -75,8 +75,8 @@ object GeneratedCodeTest extends IOApp {
       )
       for {
         // Test table
-        p               <- s.prepare(TestTable.upsertQuery)
-        id              <- p.option(testRow.withUpdate)
+        p               <- s.prepare(TestTable.upsertQuery(testUpdateFr))
+        id              <- p.option(testRow ~ testUpdateFr.argument)
         _               <- IO.raiseWhen(id.isEmpty)(new Throwable("test A did not return a generated id"))
         all             <- s.execute(TestTable.selectAll())
         allWithId       <- s.execute(TestTable.selectAllWithId())
@@ -95,8 +95,10 @@ object GeneratedCodeTest extends IOApp {
         all2 <- s.execute(TestTable.select(TestTable.all))
         _    <- IO.raiseWhen(all2 != List(testRow))(new Throwable("test A select all fields not equal"))
         // TestB table
-        upsertCmd   <- s.prepare(TestBTable.upsertQuery)
-        _           <- upsertCmd.execute(testBRow.withUpdate)
+        testBUpdateAllFr = testBRow.withUpdateAll._2
+
+        upsertCmd   <- s.prepare(TestBTable.upsertQuery(testBUpdateAllFr))
+        _           <- upsertCmd.execute(testBRow ~ testBUpdateAllFr.argument)
         allLoaded   <- s.execute(TestBTable.selectAll())
         _           <- IO.raiseWhen(List(testBRow) != allLoaded)(new Throwable("test B result not equal"))
         loadByIdQ   <- s.prepare(TestBTable.selectAll(sql"WHERE key_a = ${varchar} AND key_b = ${varchar}"))
@@ -104,12 +106,19 @@ object GeneratedCodeTest extends IOApp {
         _           <- IO.raiseWhen(Some(testBRow) != loadedById)(new Throwable("test B result by id not equal"))
         notFoundRes <- s.execute(TestBTable.selectAll(sql"WHERE key_a = 'not_existing'"))
         _           <- IO.raiseWhen(notFoundRes.nonEmpty)(new Throwable("test B query result is empty"))
-        _           <- upsertCmd.execute(testBRow.copy(val1 = "val1_update").withUpdate)
+
+        testBRowUpdate = testBRow.copy(val1 = "val1_update", val2 = "val2_update")
+        testBUpdateFr  = testBRowUpdate.withUpdate(_.copy(val2 = None))._2 // exclude update of val2
+
+        _           <- s.execute(TestBTable.upsertQuery(testBUpdateFr), testBRowUpdate ~ testBUpdateFr.argument)
         afterUpdate <- s.execute(TestBTable.selectAll())
         _           <- IO.raiseWhen(afterUpdate.length != 1)(new Throwable("test B result unexpected length"))
         _ <-
-          IO.raiseWhen(afterUpdate.headOption.map(_.val1) != Some("val1_update"))(
-            new Throwable("test B result missing update")
+          IO.raiseWhen(
+            afterUpdate.headOption.map(_.val1) != Some("val1_update") ||
+            afterUpdate.headOption.map(_.val2) == Some("val2_update") // should not be updated
+          )(
+            new Throwable("test B result unexpected update")
           )
         // Check Enum variable format
         _ = Seq(
