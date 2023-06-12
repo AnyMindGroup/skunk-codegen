@@ -1,5 +1,5 @@
 ThisBuild / organization := "com.anymindgroup"
-ThisBuild / scalaVersion := "2.12.17"
+ThisBuild / scalaVersion := "2.12.18"
 
 val skunkVersion       = "0.5.1"
 val betterFilesVersion = "3.9.2"
@@ -54,7 +54,7 @@ lazy val sbtPlugin = (project in file("modules/sbt"))
   .settings(releaseSettings)
   .settings(
     name         := "sbt-skunk-codegen",
-    scalaVersion := "2.12.17",
+    scalaVersion := "2.12.18",
     scriptedLaunchOpts := {
       scriptedLaunchOpts.value ++
         Seq("-Xmx1024M", "-Dplugin.version=" + version.value)
