@@ -11,8 +11,7 @@ lazy val commonSettings = List(
       apiKey   <- sys.env.get("ARTIFACT_REGISTRY_PASSWORD")
     } yield Credentials("https://asia-maven.pkg.dev", "asia-maven.pkg.dev", username, apiKey)
   }.getOrElse(Credentials(Path.userHome / ".ivy2" / ".credentials")),
-  version ~= (_.replace('+', '-')),
-  dynver ~= (_.replace('+', '-')),
+  version ~= { v => if (v.contains('+')) s"${v.replace('+', '-')}-SNAPSHOT" else v },
 )
 
 lazy val root = (project in file("."))
@@ -28,9 +27,13 @@ val noPublishSettings = List(
 )
 
 val releaseSettings = List(
-  publishTo := Some(
-    "Artifact Registry" at "https://asia-maven.pkg.dev/anychat-staging/maven"
-  )
+  publishTo := {
+    val pkgDev = "https://asia-maven.pkg.dev/anychat-staging"
+    if (isSnapshot.value)
+      Some("https://asia-maven.pkg.dev" at pkgDev + "/maven-snapshot")
+    else
+      Some("https://asia-maven.pkg.dev" at pkgDev + "/maven-release")
+  }
 )
 
 lazy val core = (project in file("modules/core"))
