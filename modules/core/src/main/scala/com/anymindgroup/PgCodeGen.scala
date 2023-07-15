@@ -3,7 +3,6 @@ package com.anymindgroup
 import java.io.{File => JFile}
 
 import cats.effect._
-import skunk.{Command => SqlCommand}
 import skunk._
 import skunk.codec.all._
 import skunk.data.Type
@@ -11,14 +10,13 @@ import skunk.implicits._
 import cats.implicits._
 import natchez.Trace.Implicits.noop
 
-import skunk.util.Origin
-
 import scala.concurrent.duration._
 import sys.process._
 import better.files._
-import java.time.Instant
+
 import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
 import cats.data.NonEmptyList
+import dumbo.Dumbo
 
 class PgCodeGen(
   host: String,
@@ -34,12 +32,13 @@ class PgCodeGen(
 ) {
   import PgCodeGen._
 
-  private val pkgDir = File(outputDir.toPath(), pkgName.replace('.', JFile.separatorChar))
-
-  private def sourceFiles: List[File] = {
-    val srcDir = File(sourceDir.toPath())
-    if (srcDir.exists) srcDir.list.filter(_.extension.contains(".sql")).toList else Nil
-  }
+  private val pkgDir                 = File(outputDir.toPath(), pkgName.replace('.', JFile.separatorChar))
+  private val schemaHistoryTableName = "dumbo_history"
+  private val dumbo = Dumbo[IO](
+    sourceDir = fs2.io.file.Path.fromNioPath(sourceDir.toPath()),
+    defaultSchema = "public",
+    schemaHistoryTable = schemaHistoryTableName,
+  )
 
   private def getConstraints(s: Session[IO]): IO[TableMap[Constraint]] = {
     val q: Query[Void, String ~ String ~ String ~ String ~ String ~ String] =
@@ -76,10 +75,8 @@ class PgCodeGen(
   }
 
   private def getColumns(s: Session[IO], enums: Enums): IO[TableMap[Column]] = {
-    val filterFragment: Fragment[Void] = excludeTables match {
-      case Nil => Fragment.empty
-      case _   => sql" AND table_name NOT IN (#${excludeTables.mkString("'", "','", "'")})"
-    }
+    val filterFragment: Fragment[Void] =
+      sql" AND table_name NOT IN (#${(schemaHistoryTableName :: excludeTables).mkString("'", "','", "'")})"
 
     val q: Query[Void, String ~ String ~ String ~ String ~ Option[String]] =
       sql"""SELECT table_name,column_name,udt_name,is_nullable,column_default
@@ -146,12 +143,12 @@ class PgCodeGen(
     )
     .use { s =>
       for {
-        _ <-
-          IO.raiseWhen(sourceFiles.isEmpty)(new Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
-        _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
-        _     <- s.execute(sql"CREATE SCHEMA public;".command)
-        _     <- runSqlSource(s)
-        enums <- getEnums(s)
+        sourceFiles <- dumbo.listMigrationFiles.compile.toList
+        _           <- IO.raiseWhen(sourceFiles.isEmpty)(new Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
+        _           <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
+        _           <- s.execute(sql"CREATE SCHEMA public;".command)
+        _           <- runSqlSource(s)
+        enums       <- getEnums(s)
         ((columns, indexes), constraints) <-
           getColumns(s, enums).parProduct(getIndexes(s)).parProduct(getConstraints(s))
         tables = toTables(columns, indexes, constraints)
@@ -320,19 +317,16 @@ class PgCodeGen(
         pkgDir / "Cols.scala",
         s"""|package $pkgName
             |import skunk.*
-            |import skunk.implicits.*
             |import cats.data.NonEmptyList
             |import cats.implicits.*
             |
             |final case class Cols[A] private[$pkgLastPart] (names: NonEmptyList[String], codec: Codec[A], tableAlias: String)
             |    extends (A => AppliedCol[A]) {
-            |  def name: String                     = names.intercalate(",")
-            |  def fullName: String                 = names.map(n => s"$${tableAlias}.$$n").intercalate(",")
-            |  def aliasedName: String              = names.map(name => s"$${tableAlias}.$${name} $${tableAlias}__$$name").intercalate(",")
-            |  @deprecated("Use withAlias of table instead of making alias for every column", "0.0.13")
-            |  def withAlias(alias: String)         = this.copy(tableAlias = alias)
-            |  def ~[B](that: Cols[B]): Cols[A ~ B] = Cols(this.names ::: that.names, this.codec ~ that.codec, this.tableAlias)
-            |  def apply(a: A): AppliedCol[A]       = AppliedCol(this, a)
+            |  def name: String                      = names.intercalate(",")
+            |  def fullName: String                  = names.map(n => s"$${tableAlias}.$$n").intercalate(",")
+            |  def aliasedName: String               = names.map(name => s"$${tableAlias}.$${name} $${tableAlias}__$$name").intercalate(",")
+            |  def ~[B](that: Cols[B]): Cols[(A, B)] = Cols(this.names ::: that.names, this.codec ~ that.codec, this.tableAlias)
+            |  def apply(a: A): AppliedCol[A]        = AppliedCol(this, a)
             |}
             |
             |final case class AppliedCol[A] (cols: Cols[A], value: A) {
@@ -340,27 +334,14 @@ class PgCodeGen(
             |  def fullName = cols.fullName
             |  def codec    = cols.codec
             |
-            |  def ~[B] (that: AppliedCol[B]): AppliedCol[A ~ B] = AppliedCol(this.cols ~ that.cols, this.value ~ that.value)
+            |  def ~[B] (that: AppliedCol[B]): AppliedCol[(A, B)] = AppliedCol(this.cols ~ that.cols, (this.value, that.value))
             |}
             |""".stripMargin,
       ),
     ) ::: scalaEnums(enums)
   }
 
-  private def runSqlSource(session: Session[IO]): IO[Unit] =
-    sourceFiles
-      .sortBy(f => f.name.drop(1).takeWhile(_ != '_').toInt)
-      .flatMap { f =>
-        f.lineIterator
-          .filterNot(_.trim.startsWith("--"))
-          .mkString("\n")
-          .split(";")
-          .filterNot(l => l.trim.isEmpty || l.contains("ANALYZE VERBOSE"))
-          .map { sql =>
-            SqlCommand(s"$sql;", Origin(file = f.pathAsString, line = 0), Void.codec)
-          }
-      }
-      .traverse_(session.execute)
+  private def runSqlSource(session: Session[IO]): IO[Unit] = dumbo.migrate(session).void
 
   private def toScalaType(t: Type, isNullable: Boolean, enums: Enums): Result[ScalaType] =
     t.componentTypes match {
@@ -403,7 +384,7 @@ class PgCodeGen(
       .map(c => s"    ${c.scalaName}: Option[${c.scalaType}]")
       .mkString("", ",\n", "")
 
-    def toCodecFieldsStr(cols: List[Column]) = s"${cols.map(_.codecName).mkString(" ~ ")}"
+    def toCodecFieldsStr(cols: List[Column]) = s"${cols.map(_.codecName).mkString(" *: ")}"
 
     def toUpdateFragment(cols: List[Column]) = {
       def toOptFrStr(c: Column) = s"""${c.scalaName}.map(sql"${c.columnName}=$${${c.codecName}}".apply(_))"""
@@ -473,7 +454,7 @@ class PgCodeGen(
         s")$withUpdateStr",
         "",
         s"object $rowClassName {",
-        s"  implicit val codec: Codec[$rowClassName] = ($codecData).gimap[$rowClassName]",
+        s"  implicit val codec: Codec[$rowClassName] = ($codecData).to[$rowClassName]",
         "}",
         s"${rowUpdateClassData._2.mkString("\n")}",
       ).mkString("\n")
@@ -514,9 +495,9 @@ class PgCodeGen(
     if (autoIncFk.isEmpty) {
       (rowClassName, s"${rowClassName}.codec")
     } else {
-      val autoIncFkCodecs     = autoIncFk.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" ~ ")
-      val autoIncFkScalaTypes = autoIncFk.map(_.scalaType).mkString(" ~ ")
-      (s"$autoIncFkScalaTypes ~ $rowClassName", s"$autoIncFkCodecs ~ ${rowClassName}.codec")
+      val autoIncFkCodecs     = autoIncFk.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" *: ")
+      val autoIncFkScalaTypes = autoIncFk.map(_.scalaType).mkString(" *: ")
+      (s"($autoIncFkScalaTypes ~ $rowClassName)", s"$autoIncFkCodecs ~ ${rowClassName}.codec")
     }
   }
 
@@ -531,16 +512,16 @@ class PgCodeGen(
       case Nil => ""
       case _   => autoIncColumns.map(_.columnName).mkString(" RETURNING ", ",", "")
     }
-    val returningType = autoIncColumns.map(_.scalaType).mkString(" ~ ")
+    val returningType = autoIncColumns.map(_.scalaType).mkString(" *: ")
     val fragmentType = autoIncColumns match {
       case Nil => "command"
-      case _   => s"query(${autoIncColumns.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" ~ ")})"
+      case _   => s"query(${autoIncColumns.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" *: ")})"
     }
 
     val upsertQ = primaryUniqueConstraint.map { cstr =>
       val queryType = autoIncColumns match {
-        case Nil => s"Command[$insertScalaType ~ updateFr.A]"
-        case _   => s"Query[$insertScalaType ~ updateFr.A, $returningType]"
+        case Nil => s"Command[$insertScalaType *: updateFr.A *: EmptyTuple]"
+        case _   => s"Query[$insertScalaType *: updateFr.A *: EmptyTuple, $returningType]"
       }
 
       s"""|  def upsertQuery(updateFr: AppliedFragment): $queryType =
@@ -568,9 +549,9 @@ class PgCodeGen(
           |    ev: Void =:= B
           |  ): Command[A] =
           |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
-          |          VALUES ($${cols.codec}) $$rest\"\"\".command.contramap[A](a => a ~ ev.apply(Void))
+          |          VALUES ($${cols.codec}) $$rest\"\"\".command.contramap[A](a => (a, ev.apply(Void)))
           |
-          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[A ~ B] =
+          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[A *: B *: EmptyTuple] =
           |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
           |          VALUES ($${cols.codec}) $$rest\"\"\".command
           |""".stripMargin
@@ -585,7 +566,7 @@ class PgCodeGen(
     val allCols = table.autoIncColumns ::: table.autoIncFk ::: table.columns
     val cols =
       allCols.map(column =>
-        s"""    val ${column.columnName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, tableName)"""
+        s"""    val ${column.scalaName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, tableName)"""
       )
 
     val allCol = NonEmptyList
@@ -604,13 +585,13 @@ class PgCodeGen(
     import table._
 
     val autoIncStm = if (autoIncColumns.nonEmpty) {
-      val types       = autoIncColumns.map(_.codecName).mkString(" ~ ")
-      val sTypes      = autoIncColumns.map(_.scalaType).mkString(" ~ ")
+      val types       = autoIncColumns.map(_.codecName).mkString(" *: ")
+      val sTypes      = autoIncColumns.map(_.scalaType).mkString(" *: ")
       val colNamesStr = (autoIncColumns ::: columns).map(_.columnName).mkString(", ")
 
       s"""
-         |  def selectAllWithId[A](addClause: Fragment[A] = Fragment.empty): Query[A, $sTypes ~ $rowClassName] =
-         |    sql"SELECT $colNamesStr FROM #$$tableName $$addClause".query($types ~ ${rowClassName}.codec)
+         |  def selectAllWithId[A](addClause: Fragment[A] = Fragment.empty): Query[A, $sTypes *: $rowClassName *: EmptyTuple] =
+         |    sql"SELECT $colNamesStr FROM #$$tableName $$addClause".query($types *: ${rowClassName}.codec)
          |
          """.stripMargin
     } else {
@@ -632,34 +613,36 @@ class PgCodeGen(
     autoIncStm ++ defaultStm ++ selectCol
   }
 
-  private def lastModified(files: List[File]): Option[Instant] =
-    files match {
-      case Nil => none[Instant]
-      case fs  => Some(fs.map(f => f.lastModifiedTime).max)
-    }
+  private def lastModified(modified: List[Long]): Option[Long] =
+    modified.sorted(Ordering[Long].reverse).headOption
 
-  private def outputFilesOutdated: Boolean = (for {
-    s <- lastModified(sourceFiles)
-    o <- lastModified(if (pkgDir.exists) pkgDir.list.toList else Nil)
+  private def outputFilesOutdated(sourcesModified: List[Long]): Boolean = (for {
+    s       <- lastModified(sourcesModified)
+    outFiles = if (pkgDir.exists) pkgDir.list.toList else Nil
+    o       <- lastModified(outFiles.map(_.lastModifiedTime.getEpochSecond()))
     // can't rely on timestamps when running in CI
     isNotCI = sys.env.get("CI").isEmpty
-  } yield isNotCI && o.isBefore(s)).getOrElse(true)
+  } yield isNotCI && o < s).getOrElse(true)
 
   def run(forceRegeneration: Boolean = false): IO[List[JFile]] =
-    (if ((forceRegeneration || (!pkgDir.exists() || outputFilesOutdated))) {
-       (for {
-         _     <- IO.whenA(!pkgDir.exists())(IO.println("Generated source not found"))
-         _     <- IO.whenA(outputFilesOutdated)(IO.println("Generated source is outdated"))
-         _     <- IO.println("Generating Postgres models")
-         _     <- rmDocker
-         _     <- startDocker
-         files <- generatorTask
-         _     <- rmDocker
-       } yield files).onError(_ => rmDocker)
-     } else {
-       IO(pkgDir.list.toList)
-     })
-      .map(_.map(_.toJava))
+    dumbo.listMigrationFiles.compile.toList.flatMap { sourceFiles =>
+      val isOutdated = outputFilesOutdated(sourceFiles.map(_.lastModified.toSeconds))
+
+      (if ((forceRegeneration || (!pkgDir.exists() || isOutdated))) {
+         (for {
+           _     <- IO.whenA(!pkgDir.exists())(IO.println("Generated source not found"))
+           _     <- IO.whenA(isOutdated)(IO.println("Generated source is outdated"))
+           _     <- IO.println("Generating Postgres models")
+           _     <- rmDocker
+           _     <- startDocker
+           files <- generatorTask
+           _     <- rmDocker
+         } yield files).onError(_ => rmDocker)
+       } else {
+         IO(pkgDir.list.toList)
+       })
+        .map(_.map(_.toJava))
+    }
 
   def unsafeRunSync(forceRegeneration: Boolean = false): Seq[JFile] = {
     import cats.effect.unsafe.implicits.global

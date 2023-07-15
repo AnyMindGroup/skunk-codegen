@@ -1,7 +1,6 @@
 ThisBuild / organization := "com.anymindgroup"
 ThisBuild / scalaVersion := "2.12.18"
 
-val skunkVersion       = "0.5.1"
 val betterFilesVersion = "3.9.2"
 
 lazy val commonSettings = List(
@@ -28,9 +27,13 @@ val noPublishSettings = List(
 )
 
 val releaseSettings = List(
-  publishTo := Some(
-    "Artifact Registry" at "https://asia-maven.pkg.dev/anychat-staging/maven"
-  )
+  publishTo := {
+    val pkgDev = "https://asia-maven.pkg.dev/anychat-staging"
+    if (isSnapshot.value)
+      Some("https://asia-maven.pkg.dev" at pkgDev + "/maven-snapshot")
+    else
+      Some("https://asia-maven.pkg.dev" at pkgDev + "/maven-release")
+  }
 )
 
 lazy val core = (project in file("modules/core"))
@@ -40,7 +43,7 @@ lazy val core = (project in file("modules/core"))
     javacOptions ++= Seq("-source", "17", "-target", "17"),
     Compile / scalacOptions ++= Seq("-Xsource:3", "-release:17"),
     libraryDependencies ++= Seq(
-      "org.tpolecat"         %% "skunk-core"   % skunkVersion,
+      "com.anymindgroup"     %% "dumbo"        % "0.0.1",
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
     ),
   )
