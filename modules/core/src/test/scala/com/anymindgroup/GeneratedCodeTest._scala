@@ -39,6 +39,7 @@ object GeneratedCodeTest extends IOApp {
         template = Some(TestEnumType.T1One),
         name = Some("name"),
         name2 = "name2",
+        `type` = Some("type"),
       ).withUpdateAll
 
       val testBRow = TestBRow(
@@ -76,14 +77,14 @@ object GeneratedCodeTest extends IOApp {
       for {
         // Test table
         p               <- s.prepare(TestTable.upsertQuery(testUpdateFr))
-        id              <- p.option(testRow ~ testUpdateFr.argument)
+        id              <- p.option((testRow, testUpdateFr.argument))
         _               <- IO.raiseWhen(id.isEmpty)(new Throwable("test A did not return a generated id"))
         all             <- s.execute(TestTable.selectAll())
         allWithId       <- s.execute(TestTable.selectAllWithId())
         _               <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
         _               <- IO.raiseWhen(allWithId.map(_._2) != List(testRow))(new Throwable("test A result with id not equal"))
         aliasedTestTable = TestTable.withAlias("t")
-        idAndName2       = aliasedTestTable.column.id ~ aliasedTestTable.column.name_2
+        idAndName2       = aliasedTestTable.column.id ~ aliasedTestTable.column.name2
         xs <-
           s.execute(
             sql"""SELECT #${idAndName2.aliasedName},#${aliasedTestTable.column.name.fullName} FROM #${TestTable.tableName} #${aliasedTestTable.tableName}"""
@@ -98,11 +99,11 @@ object GeneratedCodeTest extends IOApp {
         testBUpdateAllFr = testBRow.withUpdateAll._2
 
         upsertCmd   <- s.prepare(TestBTable.upsertQuery(testBUpdateAllFr))
-        _           <- upsertCmd.execute(testBRow ~ testBUpdateAllFr.argument)
+        _           <- upsertCmd.execute((testBRow, testBUpdateAllFr.argument))
         allLoaded   <- s.execute(TestBTable.selectAll())
         _           <- IO.raiseWhen(List(testBRow) != allLoaded)(new Throwable("test B result not equal"))
         loadByIdQ   <- s.prepare(TestBTable.selectAll(sql"WHERE key_a = ${varchar} AND key_b = ${varchar}"))
-        loadedById  <- loadByIdQ.option(testBRow.keyA ~ testBRow.keyB)
+        loadedById  <- loadByIdQ.option((testBRow.keyA, testBRow.keyB))
         _           <- IO.raiseWhen(Some(testBRow) != loadedById)(new Throwable("test B result by id not equal"))
         notFoundRes <- s.execute(TestBTable.selectAll(sql"WHERE key_a = 'not_existing'"))
         _           <- IO.raiseWhen(notFoundRes.nonEmpty)(new Throwable("test B query result is empty"))
@@ -110,7 +111,7 @@ object GeneratedCodeTest extends IOApp {
         testBRowUpdate = testBRow.copy(val1 = "val1_update", val2 = "val2_update")
         testBUpdateFr  = testBRowUpdate.withUpdate(_.copy(val2 = None))._2 // exclude update of val2
 
-        _           <- s.execute(TestBTable.upsertQuery(testBUpdateFr), testBRowUpdate ~ testBUpdateFr.argument)
+        _           <- s.execute(TestBTable.upsertQuery(testBUpdateFr))((testBRowUpdate, testBUpdateFr.argument))
         afterUpdate <- s.execute(TestBTable.selectAll())
         _           <- IO.raiseWhen(afterUpdate.length != 1)(new Throwable("test B result unexpected length"))
         _ <-
@@ -132,49 +133,48 @@ object GeneratedCodeTest extends IOApp {
             )
         _ <- s.execute(sql"TRUNCATE TABLE #${TestBTable.tableName}".command)
 
-        _         <- s.execute(TestBTable.insert0(TestBTable.all), testBRow)
+        _         <- s.execute(TestBTable.insert0(TestBTable.all))(testBRow)
         allBTable <- s.execute(TestBTable.select(TestBTable.all))
         _         <- IO.raiseWhen(allBTable != List(testBRow))(new Throwable("test B not equal"))
-        _ <-
+        loadedById <-
           s.option(
             TestBTable.select(
               TestBTable.all,
-              sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
-            ),
-            testBRow.keyA ~ testBRow.keyB,
-          ).flatMap(loadedById =>
-            IO.raiseWhen(Some(testBRow) != loadedById)(new Throwable("test B result by id not equal"))
-          )
+              sql"WHERE #${TestBTable.column.keyA.name} = ${TestBTable.column.keyA.codec} AND #${TestBTable.column.keyB.name} = ${TestBTable.column.keyB.codec}",
+            )
+          )((testBRow.keyA, testBRow.keyB))
+
+        _ <- IO.raiseWhen(Some(testBRow) != loadedById)(new Throwable("test B result by id not equal"))
 
         _ <-
           s.execute(
             TestBTable.select(
-              TestBTable.column.key_a ~ TestBTable.column.key_b ~ TestBTable.column.val_1,
+              TestBTable.column.keyA ~ TestBTable.column.keyB ~ TestBTable.column.val1,
               sql"WHERE key_a = 'not_existing'",
             )
           ).flatMap(notFoundRes => IO.raiseWhen(notFoundRes.nonEmpty)(new Throwable("test B query result is empty")))
 
         updatingFields =
-          TestBTable.column.val_27(None) ~ TestBTable.column.val_2("updated_val_2") ~ TestBTable.column.val_14(
+          TestBTable.column.val27(None) ~ TestBTable.column.val2("updated_val_2") ~ TestBTable.column.val14(
             "updated_val_14"
           )
         updateQ = sql"""
         ON CONFLICT ON CONSTRAINT #${generated.constraints.testBPkey.name} DO UPDATE SET
         (#${updatingFields.name}) = (${updatingFields.codec})
         """
-        _ <- s.execute(TestBTable.insert(TestBTable.all, updateQ), testBRow ~ updatingFields.value)
-        _ <-
+        _ <- s.execute(TestBTable.insert(TestBTable.all, updateQ))(testBRow *: updatingFields.value *: EmptyTuple)
+        loadedById <-
           s.option(
             TestBTable.select(
               TestBTable.all,
-              sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
-            ),
-            testBRow.keyA ~ testBRow.keyB,
-          ).flatMap(loadedById =>
-            IO.raiseWhen(
-              Some(testBRow.copy(val27 = None, val2 = "updated_val_2", val14 = "updated_val_14")) != loadedById
-            )(new Throwable("test B result missing update"))
-          )
+              sql"WHERE #${TestBTable.column.keyA.name} = ${TestBTable.column.keyA.codec} AND #${TestBTable.column.keyB.name} = ${TestBTable.column.keyB.codec}",
+            )
+          )((testBRow.keyA, testBRow.keyB))
+
+        _ <- IO.raiseWhen(
+               Some(testBRow.copy(val27 = None, val2 = "updated_val_2", val14 = "updated_val_14")) != loadedById
+             )(new Throwable("test B result missing update"))
+
         _ <- IO.println("Test successful!")
       } yield ()
 
