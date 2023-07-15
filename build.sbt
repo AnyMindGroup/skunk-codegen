@@ -10,8 +10,7 @@ lazy val commonSettings = List(
       apiKey   <- sys.env.get("ARTIFACT_REGISTRY_PASSWORD")
     } yield Credentials("https://asia-maven.pkg.dev", "asia-maven.pkg.dev", username, apiKey)
   }.getOrElse(Credentials(Path.userHome / ".ivy2" / ".credentials")),
-  version ~= (_.replace('+', '-')),
-  dynver ~= (_.replace('+', '-')),
+  version ~= { v => if (v.contains('+')) s"${v.replace('+', '-')}-SNAPSHOT" else v },
 )
 
 lazy val root = (project in file("."))

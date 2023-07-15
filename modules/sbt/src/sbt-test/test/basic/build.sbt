@@ -1,15 +1,11 @@
 crossScalaVersions := Seq( /*"3.2.2",*/ "2.13.10")
 
-val skunkVersion       = "0.5.1"
-val betterFilesVersion = "3.9.2"
+val skunkVersion = "0.5.1"
 
 lazy val testRoot = (project in file("."))
   .enablePlugins(PgCodeGenPlugin)
   .settings(
-    name         := "test",
-    version      := "0.1",
-    organization := "test",
-    javacOptions ++= Seq("-source", "17", "-target", "17"),
+    name := "test",
     Compile / scalacOptions ++= Seq("-Xsource:3", "-release:17"),
     pgCodeGenOutputPackage  := "com.example",
     pgCodeGenPassword       := Some("postgres"),
@@ -18,7 +14,6 @@ lazy val testRoot = (project in file("."))
     pgCodeGenSqlSourceDir   := file("resources") / "db" / "migration",
     pgCodeGenExcludedTables := List("unsupported_yet"),
     libraryDependencies ++= Seq(
-      "org.tpolecat"         %% "skunk-core"   % skunkVersion,
-      "com.github.pathikrit" %% "better-files" % betterFilesVersion,
+      "org.tpolecat" %% "skunk-core" % skunkVersion
     ),
   )
