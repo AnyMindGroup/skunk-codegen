@@ -1,5 +1,11 @@
 ThisBuild / organization := "com.anymindgroup"
 ThisBuild / scalaVersion := "2.12.18"
+ThisBuild / licenses     := Seq(License.Apache2)
+ThisBuild / developers := List(
+  Developer("rolang", "Roman Langolf", "@rolang", url("https://github.com/rolang")),
+  Developer("dutch3883", "Panuwach Boonyasup", "@dutch3883", url("https://github.com/dutch3883")),
+  Developer("qhquanghuy", "Huy Nguyen", "@qhquanghuy", url("https://github.com/qhquanghuy")),
+)
 
 val betterFilesVersion = "3.9.2"
 
