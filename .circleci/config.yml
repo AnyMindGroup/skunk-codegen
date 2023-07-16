@@ -60,7 +60,8 @@ jobs:
     steps:
       - checkout
       - restore_dependencies
-      - run: sbt compile
+      # for sbt < v2 which only supports scala 2.12
+      - run: sbt '+core/compile; ++2.12 sbtPlugin/compile'
       - store_build
 
   add_tag:
