@@ -6,7 +6,12 @@ lazy val testRoot = (project in file("."))
   .enablePlugins(PgCodeGenPlugin)
   .settings(
     name := "test",
-    Compile / scalacOptions ++= Seq("-Xsource:3", "-release:17"),
+    Compile / scalacOptions ++= {
+      if (scalaVersion.value.startsWith("3"))
+        Seq("-source:future")
+      else
+        Seq("-Xsource:3")
+    },
     pgCodeGenOutputPackage  := "com.example",
     pgCodeGenPassword       := Some("postgres"),
     pgCodeGenPort           := sys.env.get("CI").fold(5434)(_ => 5432),

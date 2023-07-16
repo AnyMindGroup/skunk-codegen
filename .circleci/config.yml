@@ -100,7 +100,8 @@ jobs:
       - restore_build
       - run:
           name: Test sbt plugin
-          command: sbt scripted
+          # for sbt < v2 which only supports scala 2.12
+          command: sbt ++2.12 scripted
       - store_dependencies
 
   publish:
