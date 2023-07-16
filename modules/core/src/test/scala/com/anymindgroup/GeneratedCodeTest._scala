@@ -16,7 +16,7 @@ import better.files.File
 import skunk.*
 import skunk.codec.all.*
 import skunk.util.Origin
-import skunk.{Command => SqlCommand}
+import skunk.{Command as SqlCommand}
 import cats.implicits.*
 import java.time.temporal.ChronoUnit
 import java.time.ZoneOffset

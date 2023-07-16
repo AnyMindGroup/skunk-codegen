@@ -1,4 +1,4 @@
-crossScalaVersions := Seq( /*"3.2.2",*/ "2.13.11")
+crossScalaVersions := Seq("3.3.0", "2.13.11")
 
 val skunkVersion = "0.6.0"
 

@@ -85,10 +85,10 @@ jobs:
       - restore_build
       - run:
           name: Generate code
-          command: sbt 'core/Test/runMain com.anymindgroup.RunPgCodeGen'
+          command: sbt '+core/Test/runMain com.anymindgroup.RunPgCodeGen'
       - run:
           name: Test generated code
-          command: sbt 'core/Test/runMain com.anymindgroup.GeneratedCodeTest'
+          command: sbt '++2.13 core/Test/runMain com.anymindgroup.GeneratedCodeTest; ++3.3 core/Test/runMain com.anymindgroup.GeneratedCodeTest'
       - store_dependencies
 
   test-sbt:
@@ -109,7 +109,8 @@ jobs:
       - restore_dependencies
       - restore_build
       - run:
-          command: sbt publish
+          # for sbt < v2 which only supports scala 2.12
+          command: sbt ++2.12 publish
 
 workflows:
 
