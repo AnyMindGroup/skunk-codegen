@@ -631,7 +631,7 @@ class PgCodeGen(
       (if ((forceRegeneration || (!pkgDir.exists() || isOutdated))) {
          (for {
            _     <- IO.whenA(!pkgDir.exists())(IO.println("Generated source not found"))
-           _     <- IO.whenA(isOutdated)(IO.println("Generated source is outdated"))
+           _     <- IO.whenA(pkgDir.exists() && isOutdated)(IO.println("Generated source is outdated"))
            _     <- IO.println("Generating Postgres models")
            _     <- rmDocker
            _     <- startDocker
@@ -672,7 +672,7 @@ object PgCodeGen {
     isNullable: Boolean,
     default: Option[ColumnDefault],
   ) {
-    val scalaName: String = toScalaName(columnName)
+    val scalaName: String          = toScalaName(columnName)
     val snakeCaseScalaName: String = escapeScalaKeywords(columnName)
 
     def isArr = pgType.componentTypes.nonEmpty

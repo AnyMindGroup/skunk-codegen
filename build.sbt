@@ -51,7 +51,7 @@ lazy val core = (project in file("modules/core"))
     javacOptions ++= Seq("-source", "17", "-target", "17"),
     Compile / scalacOptions ++= Seq("-Xsource:3", "-release:17"),
     libraryDependencies ++= Seq(
-      "com.anymindgroup"     %% "dumbo"        % "0.0.2",
+      "com.anymindgroup"     %% "dumbo"        % "0.0.3",
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
     ),
   )
