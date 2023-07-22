@@ -61,6 +61,7 @@ lazy val core = (project in file("modules/core"))
 lazy val sbtPlugin = (project in file("modules/sbt"))
   .enablePlugins(SbtPlugin)
   .dependsOn(core)
+  .aggregate(core)
   .settings(commonSettings)
   .settings(releaseSettings)
   .settings(

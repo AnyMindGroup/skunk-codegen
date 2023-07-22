@@ -84,7 +84,7 @@ object GeneratedCodeTest extends IOApp {
         _               <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
         _               <- IO.raiseWhen(allWithId.map(_._2) != List(testRow))(new Throwable("test A result with id not equal"))
         aliasedTestTable = TestTable.withAlias("t")
-        idAndName2       = aliasedTestTable.column.id ~ aliasedTestTable.column.name2
+        idAndName2       = aliasedTestTable.column.id ~ aliasedTestTable.column.name_2
         xs <-
           s.execute(
             sql"""SELECT #${idAndName2.aliasedName},#${aliasedTestTable.column.name.fullName} FROM #${TestTable.tableName} #${aliasedTestTable.tableName}"""
@@ -140,7 +140,7 @@ object GeneratedCodeTest extends IOApp {
           s.option(
             TestBTable.select(
               TestBTable.all,
-              sql"WHERE #${TestBTable.column.keyA.name} = ${TestBTable.column.keyA.codec} AND #${TestBTable.column.keyB.name} = ${TestBTable.column.keyB.codec}",
+              sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
             )
           )((testBRow.keyA, testBRow.keyB))
 
@@ -149,13 +149,13 @@ object GeneratedCodeTest extends IOApp {
         _ <-
           s.execute(
             TestBTable.select(
-              TestBTable.column.keyA ~ TestBTable.column.keyB ~ TestBTable.column.val1,
+              TestBTable.column.key_a ~ TestBTable.column.key_b ~ TestBTable.column.val_1,
               sql"WHERE key_a = 'not_existing'",
             )
           ).flatMap(notFoundRes => IO.raiseWhen(notFoundRes.nonEmpty)(new Throwable("test B query result is empty")))
 
         updatingFields =
-          TestBTable.column.val27(None) ~ TestBTable.column.val2("updated_val_2") ~ TestBTable.column.val14(
+          TestBTable.column.val_27(None) ~ TestBTable.column.val_2("updated_val_2") ~ TestBTable.column.val_14(
             "updated_val_14"
           )
         updateQ = sql"""
@@ -167,7 +167,7 @@ object GeneratedCodeTest extends IOApp {
           s.option(
             TestBTable.select(
               TestBTable.all,
-              sql"WHERE #${TestBTable.column.keyA.name} = ${TestBTable.column.keyA.codec} AND #${TestBTable.column.keyB.name} = ${TestBTable.column.keyB.codec}",
+              sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
             )
           )((testBRow.keyA, testBRow.keyB))
 
