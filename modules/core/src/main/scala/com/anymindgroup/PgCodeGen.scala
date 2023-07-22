@@ -566,7 +566,7 @@ class PgCodeGen(
     val allCols = table.autoIncColumns ::: table.autoIncFk ::: table.columns
     val cols =
       allCols.map(column =>
-        s"""    val ${column.scalaName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, tableName)"""
+        s"""    val ${column.snakeCaseScalaName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, tableName)"""
       )
 
     val allCol = NonEmptyList
@@ -673,6 +673,7 @@ object PgCodeGen {
     default: Option[ColumnDefault],
   ) {
     val scalaName: String = toScalaName(columnName)
+    val snakeCaseScalaName: String = escapeScalaKeywords(columnName)
 
     def isArr = pgType.componentTypes.nonEmpty
 
@@ -743,7 +744,10 @@ object PgCodeGen {
   )
 
   def toScalaName(s: String): String =
-    toCamelCase(s) match {
+    escapeScalaKeywords(toCamelCase(s))
+
+  def escapeScalaKeywords(v: String): String =
+    v match {
       case "type"   => "`type`"
       case "import" => "`import`"
       case "val"    => "`val`" // add more as required
