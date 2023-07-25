@@ -1,18 +1,18 @@
 package com.anymindgroup
 
-import java.io.{File => JFile}
+import java.io.File as JFile
 
-import cats.effect._
-import skunk._
-import skunk.codec.all._
+import cats.effect.*
+import skunk.*
+import skunk.codec.all.*
 import skunk.data.Type
-import skunk.implicits._
-import cats.implicits._
+import skunk.implicits.*
+import cats.implicits.*
 import natchez.Trace.Implicits.noop
 
-import scala.concurrent.duration._
-import sys.process._
-import better.files._
+import scala.concurrent.duration.*
+import sys.process.*
+import better.files.*
 
 import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
 import cats.data.NonEmptyList
@@ -29,8 +29,9 @@ class PgCodeGen(
   pkgName: String,
   sourceDir: JFile,
   excludeTables: List[String],
+  scalaVersion: String,
 ) {
-  import PgCodeGen._
+  import PgCodeGen.*
 
   private val pkgDir                 = File(outputDir.toPath(), pkgName.replace('.', JFile.separatorChar))
   private val schemaHistoryTableName = "dumbo_history"
@@ -127,8 +128,8 @@ class PgCodeGen(
     s.execute(q.map { case name ~ value =>
       (name, value)
     }).map {
-      _.groupBy(_._1).mapValues(_.map(_._2)).toList.map { case (name, values) =>
-        Enum(name, values.map(EnumValue))
+      _.groupBy(_._1).toList.map { case (name, values) =>
+        Enum(name, values.map(_._2).map(EnumValue(_)))
       }
     }
   }
@@ -231,28 +232,45 @@ class PgCodeGen(
     enums.map { e =>
       (
         pkgDir / s"${e.scalaName}.scala",
-        s"""|package $pkgName
-            |
-            |import skunk.Codec
-            |import enumeratum.values.{StringEnumEntry, StringEnum}
-            |import skunk.data.Type
-            |
-            |sealed abstract class ${e.scalaName}(val value: String) extends StringEnumEntry
-            |object ${e.scalaName} extends StringEnum[${e.scalaName}] {
-            |  ${e.values
-             .map(v => s"""case object ${v.scalaName} extends ${e.scalaName}("${v.name}")""")
-             .mkString("\n  ")}
-            |
-            |  val values: IndexedSeq[${e.scalaName}] = findValues
-            |
-            |  implicit val codec: Codec[${e.scalaName}] =
-            |    Codec.simple[${e.scalaName}](
-            |      a => a.value,
-            |      s => withValueEither(s).left.map(_.getMessage()),
-            |      Type("${e.name}"),
-            |    )
-            |}
-            |""".stripMargin,
+        if (!scalaVersion.startsWith("3")) {
+          s"""|package $pkgName
+              |
+              |import skunk.Codec
+              |import enumeratum.values.{StringEnumEntry, StringEnum}
+              |import skunk.data.Type
+              |
+              |sealed abstract class ${e.scalaName}(val value: String) extends StringEnumEntry
+              |object ${e.scalaName} extends StringEnum[${e.scalaName}] {
+              |  ${e.values
+               .map(v => s"""case object ${v.scalaName} extends ${e.scalaName}("${v.name}")""")
+               .mkString("\n  ")}
+              |
+              |  val values: IndexedSeq[${e.scalaName}] = findValues
+              |
+              |  implicit val codec: Codec[${e.scalaName}] =
+              |    Codec.simple[${e.scalaName}](
+              |      a => a.value,
+              |      s => withValueEither(s).left.map(_.getMessage()),
+              |      Type("${e.name}"),
+              |    )
+              |}""".stripMargin
+        } else {
+          s"""|package $pkgName
+              |
+              |import skunk.Codec
+              |import skunk.data.Type
+              |
+              |enum ${e.scalaName}(val value: String):
+              |  ${e.values.map(v => s"""case ${v.scalaName} extends ${e.scalaName}("${v.name}")""").mkString("\n  ")}
+              |
+              |object ${e.scalaName}:
+              |  implicit val codec: Codec[${e.scalaName}] =
+              |    Codec.simple[${e.scalaName}](
+              |      a => a.value,
+              |      s =>${e.scalaName}.values.find(_.value == s).toRight(s"Invalid ${e.name} type: $$s"),
+              |      Type("${e.name}"),
+              |    )""".stripMargin
+        },
       )
     }
 
@@ -374,7 +392,7 @@ class PgCodeGen(
     }
 
   private def rowFileContent(table: Table): Option[String] = {
-    import table._
+    import table.*
 
     def toClassPropsStr(cols: List[Column]) = cols
       .map(c => s"    ${c.scalaName}: ${c.scalaType}")
@@ -420,7 +438,7 @@ class PgCodeGen(
 
     def withImportsStr = rowUpdateClassData match {
       case (Nil, Nil) => ""
-      case (_, _)     => List("import skunk.implicits.*", "import cats.implicits.*").mkString("\n"),
+      case (_, _)     => List("import skunk.implicits.*", "import cats.implicits.*").mkString("\n")
     }
 
     def withUpdateStr = rowUpdateClassData match {
@@ -490,7 +508,7 @@ class PgCodeGen(
   }
 
   private def queryTypesStr(table: Table): (String, String) = {
-    import table._
+    import table.*
 
     if (autoIncFk.isEmpty) {
       (rowClassName, s"${rowClassName}.codec")
@@ -502,7 +520,7 @@ class PgCodeGen(
   }
 
   private def writeStatements(table: Table): String = {
-    import table._
+    import table.*
 
     val allCols                        = autoIncFk ::: columns
     val allColNames                    = allCols.map(_.columnName).mkString(",")
@@ -535,25 +553,23 @@ class PgCodeGen(
       case _   => s"Query[$insertScalaType, $returningType]"
     }
     val insertQ =
-      s"""|  def insertQuery: $queryType =
-          |    sql\"\"\"INSERT INTO #$$tableName ($allColNames)
-          |          VALUES ($${$insertCodec}) ON CONFLICT DO NOTHING$returningStatement\"\"\".$fragmentType""".stripMargin
+      s"""|  def insertQuery(ignoreConflict: Boolean = true): $queryType = {
+          |    val onConflictFr = if (ignoreConflict) const"ON CONFLICT DO NOTHING" else const""
+          |    sql\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec}) ON $$onConflictFr$returningStatement\".$fragmentType
+          |  }""".stripMargin
 
     val insertCol =
       s"""|
           |  def insert[A](cols: Cols[A]): Command[A] =
-          |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
-          |          VALUES ($${cols.codec})\"\"\".command
+          |    sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})\".command
           |
           |  def insert0[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING")(implicit
           |    ev: Void =:= B
           |  ): Command[A] =
-          |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
-          |          VALUES ($${cols.codec}) $$rest\"\"\".command.contramap[A](a => (a, ev.apply(Void)))
+          |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec}) " ~ rest).command.contramap[A](a => (a, ev.apply(Void)))
           |
-          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[A *: B *: EmptyTuple] =
-          |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
-          |          VALUES ($${cols.codec}) $$rest\"\"\".command
+          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[(A, B)] =
+          |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})" ~ rest).command
           |""".stripMargin
     List(
       upsertQ.getOrElse(""),
@@ -582,7 +598,7 @@ class PgCodeGen(
   }
 
   private def selectAllStatement(table: Table): String = {
-    import table._
+    import table.*
 
     val autoIncStm = if (autoIncColumns.nonEmpty) {
       val types       = autoIncColumns.map(_.codecName).mkString(" *: ")

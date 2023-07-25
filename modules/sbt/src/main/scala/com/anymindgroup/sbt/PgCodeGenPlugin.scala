@@ -66,6 +66,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           sourceDir = pgCodeGenSqlSourceDir.value,
           useDocker = pgCodeGenUseDocker.value,
           excludeTables = pgCodeGenExcludedTables.value,
+          scalaVersion = scalaVersion.value,
         ).unsafeRunSync(true)
       },
       Compile / sourceGenerators += Def.task {
@@ -80,6 +81,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           sourceDir = pgCodeGenSqlSourceDir.value,
           useDocker = pgCodeGenUseDocker.value,
           excludeTables = pgCodeGenExcludedTables.value,
+          scalaVersion = scalaVersion.value,
         ).unsafeRunSync()
       }.taskValue,
     )
