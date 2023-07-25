@@ -568,7 +568,7 @@ class PgCodeGen(
           |  ): Command[A] =
           |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec}) " ~ rest).command.contramap[A](a => (a, ev.apply(Void)))
           |
-          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[(A, B)] =
+          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[A *: B *: EmptyTuple] =
           |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})" ~ rest).command
           |""".stripMargin
     List(
@@ -582,7 +582,7 @@ class PgCodeGen(
     val allCols = table.autoIncColumns ::: table.autoIncFk ::: table.columns
     val cols =
       allCols.map(column =>
-        s"""    val ${column.scalaName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, tableName)"""
+        s"""    val ${column.snakeCaseScalaName} = Cols(NonEmptyList.of("${column.columnName}"), ${column.codecName}, tableName)"""
       )
 
     val allCol = NonEmptyList
@@ -647,8 +647,8 @@ class PgCodeGen(
       (if ((forceRegeneration || (!pkgDir.exists() || isOutdated))) {
          (for {
            _     <- IO.whenA(!pkgDir.exists())(IO.println("Generated source not found"))
-           _     <- IO.whenA(isOutdated)(IO.println("Generated source is outdated"))
-           _     <- IO.println(s"Generating Postgres models for scala $scalaVersion")
+           _     <- IO.whenA(pkgDir.exists() && isOutdated)(IO.println("Generated source is outdated"))
+           _     <- IO.println("Generating Postgres models")
            _     <- rmDocker
            _     <- startDocker
            files <- generatorTask
@@ -688,7 +688,8 @@ object PgCodeGen {
     isNullable: Boolean,
     default: Option[ColumnDefault],
   ) {
-    val scalaName: String = toScalaName(columnName)
+    val scalaName: String          = toScalaName(columnName)
+    val snakeCaseScalaName: String = escapeScalaKeywords(columnName)
 
     def isArr = pgType.componentTypes.nonEmpty
 
@@ -759,7 +760,10 @@ object PgCodeGen {
   )
 
   def toScalaName(s: String): String =
-    toCamelCase(s) match {
+    escapeScalaKeywords(toCamelCase(s))
+
+  def escapeScalaKeywords(v: String): String =
+    v match {
       case "type"   => "`type`"
       case "import" => "`import`"
       case "val"    => "`val`" // add more as required

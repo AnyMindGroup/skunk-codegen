@@ -12,7 +12,6 @@ ThisBuild / developers := List(
 )
 
 lazy val betterFilesVersion = "3.9.2"
-
 lazy val commonSettings = List(
   libraryDependencies ++= {
     if (scalaVersion.value == scala3)
@@ -71,7 +70,7 @@ lazy val core = (project in file("modules/core"))
       }
     },
     libraryDependencies ++= Seq(
-      "com.anymindgroup"     %% "dumbo"        % "0.0.1",
+      "dev.rolang"           %% "dumbo"        % "0.0.1",
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
     ),
   )
@@ -81,6 +80,7 @@ lazy val core = (project in file("modules/core"))
 lazy val sbtPlugin = (project in file("modules/sbt"))
   .enablePlugins(SbtPlugin)
   .dependsOn(core)
+  .aggregate(core)
   .settings(commonSettings)
   .settings(releaseSettings)
   .settings(

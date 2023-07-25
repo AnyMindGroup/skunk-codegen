@@ -140,7 +140,7 @@ object GeneratedCodeTest extends IOApp {
           s.option(
             TestBTable.select(
               TestBTable.all,
-              sql"WHERE #${TestBTable.column.keyA.name} = ${TestBTable.column.keyA.codec} AND #${TestBTable.column.keyB.name} = ${TestBTable.column.keyB.codec}",
+              sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
             )
           )((testBRow.keyA, testBRow.keyB))
 
@@ -167,7 +167,7 @@ object GeneratedCodeTest extends IOApp {
           s.option(
             TestBTable.select(
               TestBTable.all,
-              sql"WHERE #${TestBTable.column.keyA.name} = ${TestBTable.column.keyA.codec} AND #${TestBTable.column.keyB.name} = ${TestBTable.column.keyB.codec}",
+              sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
             )
           )((testBRow.keyA, testBRow.keyB))
 
