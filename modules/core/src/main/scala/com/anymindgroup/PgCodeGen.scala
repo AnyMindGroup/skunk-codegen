@@ -568,7 +568,7 @@ class PgCodeGen(
           |  ): Command[A] =
           |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec}) " ~ rest).command.contramap[A](a => (a, ev.apply(Void)))
           |
-          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[A *: B *: EmptyTuple] =
+          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[(A, B)] =
           |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})" ~ rest).command
           |""".stripMargin
     List(
