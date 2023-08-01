@@ -554,8 +554,8 @@ class PgCodeGen(
     }
     val insertQ =
       s"""|  def insertQuery(ignoreConflict: Boolean = true): $queryType = {
-          |    val onConflictFr = if (ignoreConflict) const"ON CONFLICT DO NOTHING" else const""
-          |    sql\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec}) ON $$onConflictFr$returningStatement\".$fragmentType
+          |    val onConflictFr = if (ignoreConflict) const" ON CONFLICT DO NOTHING" else const""
+          |    sql\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})$$onConflictFr$returningStatement\".$fragmentType
           |  }""".stripMargin
 
     val insertCol =
