@@ -17,6 +17,10 @@ import better.files.*
 import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
 import cats.data.NonEmptyList
 import dumbo.Dumbo
+import cats.data.Validated
+import dumbo.SourceFile
+import java.nio.charset.Charset
+import cats.Show
 
 class PgCodeGen(
   host: String,
@@ -35,6 +39,14 @@ class PgCodeGen(
 
   private val pkgDir                 = File(outputDir.toPath(), pkgName.replace('.', JFile.separatorChar))
   private val schemaHistoryTableName = "dumbo_history"
+  implicit val consoleErrLevel: std.Console[IO] = new std.Console[IO] {
+    override def readLineWithCharset(charset: Charset): IO[String] = IO.consoleForIO.readLineWithCharset(charset)
+    override def print[A](a: A)(implicit S: Show[A]): IO[Unit]     = IO.unit
+    override def println[A](a: A)(implicit S: Show[A]): IO[Unit]   = IO.unit
+    override def error[A](a: A)(implicit S: Show[A]): IO[Unit]     = IO.consoleForIO.error(a)
+    override def errorln[A](a: A)(implicit S: Show[A]): IO[Unit]   = IO.consoleForIO.errorln(a)
+  }
+
   private val dumbo = Dumbo[IO](
     sourceDir = fs2.io.file.Path.fromNioPath(sourceDir.toPath()),
     defaultSchema = "public",
@@ -134,7 +146,17 @@ class PgCodeGen(
     }
   }
 
-  private val generatorTask: IO[List[File]] = Session
+  private def listMigrationFiles: IO[List[SourceFile]] = dumbo.listMigrationFiles.flatMap {
+    case Validated.Invalid(errs) =>
+      IO.raiseError(
+        new Throwable(
+          s"Failed reading source files:\n${errs.toList.map(_.getMessage()).mkString("\n")}"
+        )
+      )
+    case Validated.Valid(files) => IO.pure(files)
+  }
+
+  private def generatorTask(sourceFiles: List[SourceFile]): IO[List[File]] = Session
     .single[IO](
       host = host,
       port = port,
@@ -144,12 +166,11 @@ class PgCodeGen(
     )
     .use { s =>
       for {
-        sourceFiles <- dumbo.listMigrationFiles.compile.toList
-        _           <- IO.raiseWhen(sourceFiles.isEmpty)(new Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
-        _           <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
-        _           <- s.execute(sql"CREATE SCHEMA public;".command)
-        _           <- runSqlSource(s)
-        enums       <- getEnums(s)
+        _     <- IO.raiseWhen(sourceFiles.isEmpty)(new Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
+        _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
+        _     <- s.execute(sql"CREATE SCHEMA public;".command)
+        _     <- runSqlSource(s)
+        enums <- getEnums(s)
         ((columns, indexes), constraints) <-
           getColumns(s, enums).parProduct(getIndexes(s)).parProduct(getConstraints(s))
         tables = toTables(columns, indexes, constraints)
@@ -641,7 +662,7 @@ class PgCodeGen(
   } yield isNotCI && o < s).getOrElse(true)
 
   def run(forceRegeneration: Boolean = false): IO[List[JFile]] =
-    dumbo.listMigrationFiles.compile.toList.flatMap { sourceFiles =>
+    listMigrationFiles.flatMap { sourceFiles =>
       val isOutdated = outputFilesOutdated(sourceFiles.map(_.lastModified.toSeconds))
 
       (if ((forceRegeneration || (!pkgDir.exists() || isOutdated))) {
@@ -651,7 +672,7 @@ class PgCodeGen(
            _     <- IO.println("Generating Postgres models")
            _     <- rmDocker
            _     <- startDocker
-           files <- generatorTask
+           files <- generatorTask(sourceFiles)
            _     <- rmDocker
          } yield files).onError(_ => rmDocker)
        } else {
