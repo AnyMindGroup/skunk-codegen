@@ -70,7 +70,7 @@ lazy val core = (project in file("modules/core"))
       }
     },
     libraryDependencies ++= Seq(
-      "dev.rolang"           %% "dumbo"        % "0.0.1",
+      "dev.rolang"           %% "dumbo"        % "0.0.2",
       "com.github.pathikrit" %% "better-files" % betterFilesVersion,
     ),
   )
