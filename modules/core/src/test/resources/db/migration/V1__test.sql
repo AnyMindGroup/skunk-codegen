@@ -13,6 +13,7 @@ CREATE TABLE test (
   tla char(3) NOT NULL,
   tla_var varchar(3) NOT NULL,
   numeric_default numeric NOT NULL,
+  numeric_24p numeric(24) NOT NULL,
   numeric_16p_2s numeric(16, 2) NOT NULL
 );
 

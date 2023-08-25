@@ -43,7 +43,8 @@ object GeneratedCodeTest extends IOApp {
         tla = "abc",
         tlaVar = "abc",
         numericDefault = BigDecimal(1),
-        numeric16p2s = BigDecimal(2)
+        numeric24p = BigDecimal(2),
+        numeric16p2s = BigDecimal(3)
       ).withUpdateAll
 
       val testBRow = TestBRow(

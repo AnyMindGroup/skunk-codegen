@@ -95,7 +95,7 @@ class PgCodeGen(
   ): Type =
     (udt, maxCharLength, numPrecision, numScale) match {
       case (u @ ("bpchar" | "varchar"), Some(l), _, _) => Type(s"$u($l)")
-      case ("numeric", _, Some(p), Some(s))            => Type(s"numeric($p, $s)")
+      case ("numeric", _, Some(p), Some(s))            => Type(s"numeric($p${if (s > 0) ", " + s.toString else ""})")
       case _ =>
         val componentTypes = if (udt.startsWith("_")) List(Type(udt.stripPrefix("_"))) else Nil
         Type(udt, componentTypes)
