@@ -87,18 +87,37 @@ class PgCodeGen(
     }
   }
 
+  private def toType(
+    udt: String,
+    maxCharLength: Option[Int],
+    numPrecision: Option[Int],
+    numScale: Option[Int],
+  ): Type =
+    (udt, maxCharLength, numPrecision, numScale) match {
+      case (u @ ("bpchar" | "varchar"), Some(l), _, _) => Type(s"$u($l)")
+      case ("numeric", _, Some(p), Some(s))            => Type(s"numeric($p, $s)")
+      case _ =>
+        val componentTypes = if (udt.startsWith("_")) List(Type(udt.stripPrefix("_"))) else Nil
+        Type(udt, componentTypes)
+    }
+
   private def getColumns(s: Session[IO], enums: Enums): IO[TableMap[Column]] = {
     val filterFragment: Fragment[Void] =
       sql" AND table_name NOT IN (#${(schemaHistoryTableName :: excludeTables).mkString("'", "','", "'")})"
 
-    val q: Query[Void, String ~ String ~ String ~ String ~ Option[String]] =
-      sql"""SELECT table_name,column_name,udt_name,is_nullable,column_default
+    val q: Query[Void, String ~ String ~ String ~ Option[Int] ~ Option[Int] ~ Option[Int] ~ String ~ Option[String]] =
+      sql"""SELECT table_name,column_name,udt_name,character_maximum_length,numeric_precision,numeric_scale,is_nullable,column_default
             FROM information_schema.COLUMNS WHERE table_schema = 'public'$filterFragment
-            """.query(name ~ name ~ name ~ varchar(3) ~ varchar.opt)
+            """.query(name ~ name ~ name ~ int4.opt ~ int4.opt ~ int4.opt ~ varchar(3) ~ varchar.opt)
 
-    s.execute(q.map { case tName ~ colName ~ udt ~ nullable ~ default =>
-      val componentTypes = if (udt.startsWith("_")) List(Type(udt.stripPrefix("_"))) else Nil
-      (tName, colName, Type(udt, componentTypes), nullable == "YES", default.flatMap(ColumnDefault.fromString))
+    s.execute(q.map { case tName ~ colName ~ udt ~ maxCharLength ~ numPrecision ~ numScale ~ nullable ~ default =>
+      (
+        tName,
+        colName,
+        toType(udt, maxCharLength, numPrecision, numScale),
+        nullable == "YES",
+        default.flatMap(ColumnDefault.fromString),
+      )
     }).map(_.map { case (tName, colName, udt, isNullable, default) =>
       toScalaType(udt, isNullable, enums).map { st =>
         (
@@ -402,7 +421,9 @@ class PgCodeGen(
           "java.time.OffsetDateTime" -> timestamptz.types,
           "java.time.Duration"       -> List(Type.interval),
         ).collectFirst {
-          case (scalaType, pgTypes) if pgTypes.contains(t) => if (isNullable) s"Option[$scalaType]" else scalaType
+          // check by type name without a max length parameter if set, e.g. vacrhar instead of varchar(3)
+          case (scalaType, pgTypes) if pgTypes.map(_.name).contains(t.name.takeWhile(_ != '(')) =>
+            if (isNullable) s"Option[$scalaType]" else scalaType
         }.orElse {
           enums.find(_.name == t.name).map(e => if (isNullable) s"Option[${e.scalaName}]" else e.scalaName)
         }.toRight(s"No scala type found for type ${t.name}")
