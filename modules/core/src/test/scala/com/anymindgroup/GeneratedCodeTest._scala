@@ -40,6 +40,11 @@ object GeneratedCodeTest extends IOApp {
         name = Some("name"),
         name2 = "name2",
         `type` = Some("type"),
+        tla = "abc",
+        tlaVar = "abc",
+        numericDefault = BigDecimal(1),
+        numeric24p = BigDecimal(2),
+        numeric16p2s = BigDecimal(3)
       ).withUpdateAll
 
       val testBRow = TestBRow(
