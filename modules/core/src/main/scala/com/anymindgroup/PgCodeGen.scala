@@ -82,8 +82,20 @@ class PgCodeGen(
     }
 
     val q: Query[Void, String ~ String ~ String ~ String ~ Option[String]] =
-      sql"""SELECT table_name,column_name,udt_name,is_nullable,column_default
+      sql"""SELECT table_name,column_name,udt_name,is_nullable::varchar(3),column_default
             FROM information_schema.COLUMNS WHERE table_schema = 'public'$filterFragment
+            UNION (SELECT
+               cls.relname as table_name,
+               attr.attname as column_name,
+               tp.typname as udt_name,
+               'YES'::varchar(3) as is_nullable,
+               null as column_default
+            from pg_catalog.pg_attribute as attr
+            join pg_catalog.pg_class as cls on cls.oid = attr.attrelid
+            join pg_catalog.pg_namespace as ns on ns.oid = cls.relnamespace
+            join pg_catalog.pg_type as tp on tp.oid = attr.atttypid
+            WHERE cls.relkind = 'm' and attr.attnum >= 1 and ns.nspname = 'public'
+            order by attr.attnum)
             """.query(name ~ name ~ name ~ varchar(3) ~ varchar.opt)
 
     s.execute(q.map { case tName ~ colName ~ udt ~ nullable ~ default =>
@@ -564,6 +576,10 @@ class PgCodeGen(
           |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
           |          VALUES ($${cols.codec})\"\"\".command
           |
+          |  def insertList[A](cols: Cols[List[A]]): Command[List[A]] =
+          |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
+          |          VALUES ($${cols.codec})\"\"\".command
+          |
           |  def insert0[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING")(implicit
           |    ev: Void =:= B
           |  ): Command[A] =
@@ -573,6 +589,7 @@ class PgCodeGen(
           |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[A ~ B] =
           |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
           |          VALUES ($${cols.codec}) $$rest\"\"\".command
+          |
           |""".stripMargin
     List(
       upsertQ.getOrElse(""),

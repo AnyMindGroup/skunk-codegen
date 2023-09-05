@@ -31,3 +31,11 @@ CREATE TABLE test_ref_pk (
   test_id INT NOT NULL REFERENCES test(id) ON DELETE CASCADE,
   ref_name VARCHAR NOT NULL
 );
+
+CREATE MATERIALIZED VIEW public.test_materialized_view AS SELECT id,
+    created_at,
+    name,
+    name_2,
+    number
+   FROM test
+WITH DATA;
