@@ -37,5 +37,4 @@ CREATE MATERIALIZED VIEW public.test_materialized_view AS SELECT id,
     name,
     name_2,
     number
-   FROM test
-WITH DATA;
+   FROM test WITH DATA;
