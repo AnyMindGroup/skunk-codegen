@@ -576,10 +576,6 @@ class PgCodeGen(
           |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
           |          VALUES ($${cols.codec})\"\"\".command
           |
-          |  def insertList[A](cols: Cols[List[A]]): Command[List[A]] =
-          |    sql\"\"\"INSERT INTO #$$tableName (#$${cols.name})
-          |          VALUES ($${cols.codec})\"\"\".command
-          |
           |  def insert0[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING")(implicit
           |    ev: Void =:= B
           |  ): Command[A] =
