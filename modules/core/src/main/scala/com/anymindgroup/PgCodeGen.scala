@@ -107,7 +107,28 @@ class PgCodeGen(
 
     val q: Query[Void, String ~ String ~ String ~ Option[Int] ~ Option[Int] ~ Option[Int] ~ String ~ Option[String]] =
       sql"""SELECT table_name,column_name,udt_name,character_maximum_length,numeric_precision,numeric_scale,is_nullable,column_default
-            FROM information_schema.COLUMNS WHERE table_schema = 'public'$filterFragment
+                  FROM information_schema.COLUMNS WHERE table_schema = 'public'$filterFragment UNION
+                  (SELECT
+          cls.relname AS table_name,
+          attr.attname AS column_name,
+          tp.typname AS udt_name,
+          information_schema._pg_char_max_length(information_schema._pg_truetypid(attr.*, tp.*), information_schema._pg_truetypmod(
+          attr.*, tp.*))::information_schema.cardinal_number AS character_maximum_length,
+          information_schema._pg_numeric_precision(information_schema._pg_truetypid(attr.*, tp.*), information_schema._pg_truetypmod(
+          attr.*, tp.*))::information_schema.cardinal_number AS numeric_precision,
+          information_schema._pg_numeric_scale(information_schema._pg_truetypid(attr.*, tp.*), information_schema._pg_truetypmod(
+          attr.*, tp.*))::information_schema.cardinal_number AS numeric_scale,
+          CASE
+              WHEN attr.attnotnull OR tp.typtype = 'd'::"char" AND tp.typnotnull THEN 'NO'::text
+              ELSE 'YES'::text
+          END::information_schema.yes_or_no AS is_nullable,
+          NULL AS column_default
+          FROM pg_catalog.pg_attribute as attr
+          JOIN pg_catalog.pg_class as cls on cls.oid = attr.attrelid
+          JOIN pg_catalog.pg_namespace as ns on ns.oid = cls.relnamespace
+          JOIN pg_catalog.pg_type as tp on tp.oid = attr.atttypid
+          WHERE cls.relkind = 'm' and attr.attnum >= 1 AND ns.nspname = 'public'
+          ORDER by attr.attnum)
             """.query(name ~ name ~ name ~ int4.opt ~ int4.opt ~ int4.opt ~ varchar(3) ~ varchar.opt)
 
     s.execute(q.map { case tName ~ colName ~ udt ~ maxCharLength ~ numPrecision ~ numScale ~ nullable ~ default =>

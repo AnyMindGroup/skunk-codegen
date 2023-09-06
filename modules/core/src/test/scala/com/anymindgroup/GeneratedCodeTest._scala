@@ -5,6 +5,7 @@ import cats.effect.{ExitCode, IO}
 import skunk.Session
 import natchez.Trace.Implicits.noop
 import com.anymindgroup.generated.TestBTable
+import com.anymindgroup.generated.TestMaterializedViewTable
 import com.anymindgroup.generated.TestBRow
 import skunk.implicits.*
 import com.anymindgroup.generated.TestTable
@@ -176,11 +177,12 @@ object GeneratedCodeTest extends IOApp {
               sql"WHERE #${TestBTable.column.key_a.name} = ${TestBTable.column.key_a.codec} AND #${TestBTable.column.key_b.name} = ${TestBTable.column.key_b.codec}",
             )
           )((testBRow.keyA, testBRow.keyB))
-
         _ <- IO.raiseWhen(
                Some(testBRow.copy(val27 = None, val2 = "updated_val_2", val14 = "updated_val_14")) != loadedById
              )(new Throwable("test B result missing update"))
-
+        _ <- s.execute(sql"REFRESH MATERIALIZED VIEW test_materialized_view".command)
+        result <- s.execute(TestMaterializedViewTable.selectAll())
+        _ <-  IO.raiseWhen(result.isEmpty)(new Throwable(s"materialized view doesn't have correct value: ${result}"))
         _ <- IO.println("Test successful!")
       } yield ()
 
