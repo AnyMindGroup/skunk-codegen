@@ -1,6 +1,6 @@
 > +pgCodeGen
 $ exists target/scala-2.13/src_managed/com/example/TestTable.scala
 $ exists target/scala-2.13/src_managed/com/example/TestRow.scala
-#$ exists target/scala-3.2.2/src_managed/com/example/TestTable.scala
-#$ exists target/scala-3.2.2/src_managed/com/example/TestRow.scala
+$ exists target/scala-3.3.0/src_managed/com/example/TestTable.scala
+$ exists target/scala-3.3.0/src_managed/com/example/TestRow.scala
 > +compile

@@ -8,7 +8,13 @@ CREATE TABLE test (
   name text,
   name_2 varchar NOT NULL,
   number int,
-  template test_enum_type
+  template test_enum_type,
+  type varchar,
+  tla char(3) NOT NULL,
+  tla_var varchar(3) NOT NULL,
+  numeric_default numeric NOT NULL,
+  numeric_24p numeric(24) NOT NULL,
+  numeric_16p_2s numeric(16, 2) NOT NULL
 );
 
 CREATE TABLE test_ref_only (

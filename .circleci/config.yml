@@ -60,7 +60,8 @@ jobs:
     steps:
       - checkout
       - restore_dependencies
-      - run: sbt compile
+      # for sbt < v2 which only supports scala 2.12
+      - run: sbt '+core/compile; ++2.12 sbtPlugin/compile'
       - store_build
 
   add_tag:
@@ -69,7 +70,7 @@ jobs:
       - checkout
       - add_ssh_keys:
           fingerprints:
-            - "f3:b1:d0:00:b8:5d:26:30:6a:ec:b9:58:35:4c:34:aa"
+            - "14:3e:45:58:57:5a:82:40:1e:69:c5:0e:89:bf:51:50"
       - run:
           name: Configure git user
           command: |
@@ -85,10 +86,10 @@ jobs:
       - restore_build
       - run:
           name: Generate code
-          command: sbt 'core/Test/runMain com.anymindgroup.RunPgCodeGen'
+          command: sbt '+core/Test/runMain com.anymindgroup.RunPgCodeGen'
       - run:
           name: Test generated code
-          command: sbt 'core/Test/runMain com.anymindgroup.GeneratedCodeTest'
+          command: sbt '++2.13 core/Test/runMain com.anymindgroup.GeneratedCodeTest; ++3.3 core/Test/runMain com.anymindgroup.GeneratedCodeTest'
       - store_dependencies
 
   test-sbt:
@@ -99,7 +100,8 @@ jobs:
       - restore_build
       - run:
           name: Test sbt plugin
-          command: sbt scripted
+          # for sbt < v2 which only supports scala 2.12
+          command: sbt ++2.12 scripted
       - store_dependencies
 
   publish:
@@ -109,7 +111,8 @@ jobs:
       - restore_dependencies
       - restore_build
       - run:
-          command: sbt publish
+          # for sbt < v2 which only supports scala 2.12
+          command: sbt ++2.12 publish
 
 workflows:
 
@@ -117,19 +120,19 @@ workflows:
     jobs:
       - build:
           context:
-            - anychat-be
+            - asia-maven.pkg.dev/anychat-staging
           filters:
             branches:
               ignore:
                 - master
       - test:
           context:
-            - anychat-be
+            - asia-maven.pkg.dev/anychat-staging
           requires:
             - build
       - test-sbt:
           context:
-            - anychat-be
+            - asia-maven.pkg.dev/anychat-staging
           requires:
             - build
 
@@ -137,19 +140,19 @@ workflows:
     jobs:
       - build:
           context:
-            - anychat-be
+            - asia-maven.pkg.dev/anychat-staging
           filters:
             branches:
               only:
                 - master
       - test:
           context:
-            - anychat-be
+            - asia-maven.pkg.dev/anychat-staging
           requires:
             - build
       - test-sbt:
           context:
-            - anychat-be
+            - asia-maven.pkg.dev/anychat-staging
           requires:
             - build
       - add_tag:
@@ -161,7 +164,7 @@ workflows:
     jobs:
       - publish:
           context:
-            - anychat-be
+            - asia-maven.pkg.dev/anychat-staging
           filters:
             tags:
               only: /v\d+\.\d+\.\d+/
