@@ -25,8 +25,8 @@ object PgCodeGenPlugin extends AutoPlugin {
     lazy val pgCodeGenDb: SettingKey[String] =
       settingKey[String]("Postgres database name")
 
-    lazy val pgCodeGenUseDocker: SettingKey[Boolean] =
-      settingKey[Boolean]("Whether to use docker to start/stop the service")
+    lazy val pgCodeGenUseDockerImage: SettingKey[Option[String]] =
+      settingKey[Boolean]("Whether to use docker and what image")
 
     lazy val pgCodeGenSqlSourceDir: SettingKey[File] =
       settingKey[File]("Directory of sql scripts")
@@ -53,7 +53,7 @@ object PgCodeGenPlugin extends AutoPlugin {
       pgCodeGenOutputPackage  := "anychat.chat.db",
       pgCodeGenOutputDir      := (Compile / sourceManaged).value,
       pgCodeGenExcludedTables := Nil,
-      pgCodeGenUseDocker      := true,
+      pgCodeGenUseDockerImage := Some("postgres:14-alpine"),
       pgCodeGen := {
         new PgCodeGen(
           host = pgCodeGenHost.value,
@@ -64,7 +64,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           outputDir = pgCodeGenOutputDir.value,
           pkgName = pgCodeGenOutputPackage.value,
           sourceDir = pgCodeGenSqlSourceDir.value,
-          useDocker = pgCodeGenUseDocker.value,
+          pgCodeGenUseDockerImage = pgCodeGenUseDockerImage.value,
           excludeTables = pgCodeGenExcludedTables.value,
           scalaVersion = scalaVersion.value,
         ).unsafeRunSync(true)
@@ -79,7 +79,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           outputDir = pgCodeGenOutputDir.value,
           pkgName = pgCodeGenOutputPackage.value,
           sourceDir = pgCodeGenSqlSourceDir.value,
-          useDocker = pgCodeGenUseDocker.value,
+          useDockerImage = pgCodeGenUseDockerImage.value,
           excludeTables = pgCodeGenExcludedTables.value,
           scalaVersion = scalaVersion.value,
         ).unsafeRunSync()

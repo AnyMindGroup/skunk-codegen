@@ -25,7 +25,7 @@ object RunPgCodeGen extends IOApp {
            database = "postgres",
            port = sys.env.get("CI").fold(5434)(_ => 5432),
            password = Some("postgres"),
-           useDocker = sys.env.get("CI").fold(true)(_ => false),
+           useDockerImage = sys.env.get("CI").fold(Option("postgres:14-alpine"))(_ => None),
            outputDir = (baseSrcDir / scalaOutDir).toJava,
            pkgName = "com.anymindgroup.generated",
            sourceDir = (baseSrcDir / "resources" / "db" / "migration").toJava,

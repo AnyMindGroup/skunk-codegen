@@ -28,7 +28,7 @@ class PgCodeGen(
   database: String,
   port: Int,
   password: Option[String],
-  useDocker: Boolean,
+  useDockerImage: Option[String],
   outputDir: JFile,
   pkgName: String,
   sourceDir: JFile,
@@ -196,7 +196,7 @@ class PgCodeGen(
     case Validated.Valid(files) => IO.pure(files)
   }
 
-  private def generatorTask(sourceFiles: List[SourceFile]): IO[List[File]] = Session
+  private val singleSession = Session
     .single[IO](
       host = host,
       port = port,
@@ -204,7 +204,9 @@ class PgCodeGen(
       database = database,
       password = password,
     )
-    .use { s =>
+
+  private def generatorTask(sourceFiles: List[SourceFile]): IO[List[File]] =
+    singleSession.use { s =>
       for {
         _     <- IO.raiseWhen(sourceFiles.isEmpty)(new Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
         _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
@@ -236,15 +238,27 @@ class PgCodeGen(
 
   private val pgServiceName = pkgName.replace('.', '-')
 
-  private def startDocker: IO[Unit] = if (useDocker) {
-    val cmd =
-      s"docker run -p $port:5432 -h $host -e POSTGRES_USER=$user ${password.fold("")(p => s"-e POSTGRES_PASSWORD=$p ")}" +
-        s"--name $pgServiceName -d postgres:14-alpine"
+  private def awaitReadiness: IO[Unit] =
+    fs2.Stream
+      .repeatEval(singleSession.use(_.unique(sql"SELECT 1".query(int4)).void).attempt.map(_.swap.toOption))
+      .metered(500.millis)
+      .timeout(10.seconds)
+      .unNoneTerminate
+      .compile
+      .drain
+      .onError(e => IO.println(s"Could not connect to docker on $host:$port ${e.getMessage()}"))
 
-    IO(cmd.!!) >> IO.sleep(2.seconds)
-  } else IO.unit
+  private def startDocker: IO[Unit] =
+    useDockerImage match {
+      case None => IO.unit
+      case Some(image) =>
+        val cmd =
+          s"docker run -p $port:5432 -h $host -e POSTGRES_USER=$user ${password.fold("")(p => s"-e POSTGRES_PASSWORD=$p ")}" +
+            s"--name $pgServiceName -d $image"
+        IO(cmd.!!) >> awaitReadiness
+    }
 
-  private def rmDocker: IO[Unit] = if (useDocker) {
+  private def rmDocker: IO[Unit] = if (useDockerImage.nonEmpty) {
     IO(s"docker rm -f $pgServiceName" ! ProcessLogger(_ => ())).void
   } else IO.unit
 
