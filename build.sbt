@@ -64,7 +64,7 @@ lazy val core = (project in file("modules/core"))
         if (scalaVersion.value == scala3)
           Seq("-source:future")
         else if (scalaVersion.value == scala213)
-          Seq("-Ymacro-annotations", "-Xsource:3")
+          Seq("-Ymacro-annotations", "-Xsource:3", "-Wconf:cat=scala3-migration:s") // https://github.com/scala/scala/pull/10439
         else
           Seq("-Xsource:3")
       }
