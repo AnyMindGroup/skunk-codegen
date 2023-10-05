@@ -399,7 +399,7 @@ class PgCodeGen(
             |import cats.data.NonEmptyList
             |import cats.implicits.*
             |
-            |final case class Cols[A] private[$pkgLastPart] (names: NonEmptyList[String], codec: Codec[A], tableAlias: String)
+            |final case class Cols[A](names: NonEmptyList[String], codec: Codec[A], tableAlias: String)
             |    extends (A => AppliedCol[A]) {
             |  def name: String                      = names.intercalate(",")
             |  def fullName: String                  = names.map(n => s"$${tableAlias}.$$n").intercalate(",")
