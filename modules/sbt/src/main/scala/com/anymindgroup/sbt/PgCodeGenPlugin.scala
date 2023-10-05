@@ -26,7 +26,7 @@ object PgCodeGenPlugin extends AutoPlugin {
       settingKey[String]("Postgres database name")
 
     lazy val pgCodeGenUseDockerImage: SettingKey[Option[String]] =
-      settingKey[Boolean]("Whether to use docker and what image")
+      settingKey[Option[String]]("Whether to use docker and what image")
 
     lazy val pgCodeGenSqlSourceDir: SettingKey[File] =
       settingKey[File]("Directory of sql scripts")
@@ -64,7 +64,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           outputDir = pgCodeGenOutputDir.value,
           pkgName = pgCodeGenOutputPackage.value,
           sourceDir = pgCodeGenSqlSourceDir.value,
-          pgCodeGenUseDockerImage = pgCodeGenUseDockerImage.value,
+          useDockerImage = pgCodeGenUseDockerImage.value,
           excludeTables = pgCodeGenExcludedTables.value,
           scalaVersion = scalaVersion.value,
         ).unsafeRunSync(true)
