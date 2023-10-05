@@ -1,5 +1,5 @@
 lazy val scala212 = "2.12.18"
-lazy val scala213 = "2.13.11"
+lazy val scala213 = "2.13.12"
 lazy val scala3   = "3.3.0"
 lazy val allScala = Seq(scala212, scala213, scala3)
 
@@ -64,7 +64,7 @@ lazy val core = (project in file("modules/core"))
         if (scalaVersion.value == scala3)
           Seq("-source:future")
         else if (scalaVersion.value == scala213)
-          Seq("-Ymacro-annotations", "-Xsource:3")
+          Seq("-Ymacro-annotations", "-Xsource:3", "-Wconf:cat=scala3-migration:s") // https://github.com/scala/scala/pull/10439
         else
           Seq("-Xsource:3")
       }
