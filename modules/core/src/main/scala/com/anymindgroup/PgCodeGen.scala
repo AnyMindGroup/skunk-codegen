@@ -18,7 +18,8 @@ import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
 import cats.data.NonEmptyList
 import dumbo.Dumbo
 import cats.data.Validated
-import dumbo.SourceFile
+import dumbo.ResourceFile
+import fs2.io.file.Files
 import java.nio.charset.Charset
 import cats.Show
 
@@ -46,12 +47,6 @@ class PgCodeGen(
     override def error[A](a: A)(implicit S: Show[A]): IO[Unit]     = IO.consoleForIO.error(a)
     override def errorln[A](a: A)(implicit S: Show[A]): IO[Unit]   = IO.consoleForIO.errorln(a)
   }
-
-  private val dumbo = Dumbo[IO](
-    sourceDir = fs2.io.file.Path.fromNioPath(sourceDir.toPath()),
-    defaultSchema = "public",
-    schemaHistoryTable = schemaHistoryTableName,
-  )
 
   private def getConstraints(s: Session[IO]): IO[TableMap[Constraint]] = {
     val q: Query[Void, String ~ String ~ String ~ String ~ String ~ String] =
@@ -186,16 +181,6 @@ class PgCodeGen(
     }
   }
 
-  private def listMigrationFiles: IO[List[SourceFile]] = dumbo.listMigrationFiles.flatMap {
-    case Validated.Invalid(errs) =>
-      IO.raiseError(
-        new Throwable(
-          s"Failed reading source files:\n${errs.toList.map(_.getMessage()).mkString("\n")}"
-        )
-      )
-    case Validated.Valid(files) => IO.pure(files)
-  }
-
   private val singleSession = Session
     .single[IO](
       host = host,
@@ -205,13 +190,30 @@ class PgCodeGen(
       password = password,
     )
 
-  private def generatorTask(sourceFiles: List[SourceFile]): IO[List[File]] =
+  private val dumboWithFiles = Dumbo.withFilesIn[IO](fs2.io.file.Path.fromNioPath(sourceDir.toPath()))
+
+  private val dumbo = dumboWithFiles.apply(
+    sessionResource = singleSession,
+    defaultSchema = "public",
+    schemaHistoryTable = schemaHistoryTableName,
+  )
+
+  private def listMigrationFiles: IO[List[ResourceFile]] = dumboWithFiles.listMigrationFiles.flatMap {
+    case Validated.Invalid(errs) =>
+      IO.raiseError(
+        new Throwable(
+          s"Failed reading source files:\n${errs.toList.map(_.getMessage()).mkString("\n")}"
+        )
+      )
+    case Validated.Valid(files) => IO.pure(files)
+  }
+
+  private def generatorTask: IO[List[File]] =
     singleSession.use { s =>
       for {
-        _     <- IO.raiseWhen(sourceFiles.isEmpty)(new Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
         _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
         _     <- s.execute(sql"CREATE SCHEMA public;".command)
-        _     <- runSqlSource(s)
+        _     <- dumbo.runMigration.void
         enums <- getEnums(s)
         ((columns, indexes), constraints) <-
           getColumns(s, enums).parProduct(getIndexes(s)).parProduct(getConstraints(s))
@@ -433,8 +435,6 @@ class PgCodeGen(
       ),
     ) ::: scalaEnums(enums)
   }
-
-  private def runSqlSource(session: Session[IO]): IO[Unit] = dumbo.migrate(session).void
 
   private def toScalaType(t: Type, isNullable: Boolean, enums: Enums): Result[ScalaType] =
     t.componentTypes match {
@@ -719,16 +719,21 @@ class PgCodeGen(
 
   def run(forceRegeneration: Boolean = false): IO[List[JFile]] =
     listMigrationFiles.flatMap { sourceFiles =>
-      val isOutdated = outputFilesOutdated(sourceFiles.map(_.lastModified.toSeconds))
-
+      sourceFiles
+        .map(_.path)
+        .traverse(Files[IO].getLastModifiedTime(_))
+        .map(l => outputFilesOutdated(l.map(_.toSeconds)))
+        .map((sourceFiles, _))
+    }.flatMap { case (sourceFiles, isOutdated) =>
       (if ((forceRegeneration || (!pkgDir.exists() || isOutdated))) {
          (for {
+           _     <- IO.raiseWhen(sourceFiles.isEmpty)(new Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
            _     <- IO.whenA(!pkgDir.exists())(IO.println("Generated source not found"))
            _     <- IO.whenA(pkgDir.exists() && isOutdated)(IO.println("Generated source is outdated"))
            _     <- IO.println("Generating Postgres models")
            _     <- rmDocker
            _     <- startDocker
-           files <- generatorTask(sourceFiles)
+           files <- generatorTask
            _     <- rmDocker
          } yield files).onError(_ => rmDocker)
        } else {
