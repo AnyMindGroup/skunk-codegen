@@ -44,13 +44,7 @@ val noPublishSettings = List(
 )
 
 val releaseSettings = List(
-  publishTo := {
-    val pkgDev = "https://asia-maven.pkg.dev/anychat-staging"
-    if (isSnapshot.value)
-      Some("https://asia-maven.pkg.dev" at pkgDev + "/maven-snapshot")
-    else
-      Some("https://asia-maven.pkg.dev" at pkgDev + "/maven-release")
-  }
+  publishTo := Some("AnyChat Maven" at "https://asia-maven.pkg.dev/anychat-staging/maven")
 )
 
 lazy val core = (project in file("modules/core"))
@@ -58,16 +52,18 @@ lazy val core = (project in file("modules/core"))
     name               := "skunk-codegen",
     scalaVersion       := scala213,
     crossScalaVersions := allScala,
-    javacOptions ++= Seq("-source", "17", "-target", "17"),
+    javacOptions ++= Seq("-source", "17"),
     Compile / scalacOptions ++= {
-      Seq("-release:17") ++ {
-        if (scalaVersion.value == scala3)
-          Seq("-source:future")
-        else if (scalaVersion.value == scala213)
-          Seq("-Ymacro-annotations", "-Xsource:3", "-Wconf:cat=scala3-migration:s") // https://github.com/scala/scala/pull/10439
-        else
-          Seq("-Xsource:3")
-      }
+      if (scalaVersion.value == scala3)
+        Seq("-source:future")
+      else if (scalaVersion.value == scala213)
+        Seq(
+          "-Ymacro-annotations",
+          "-Xsource:3",
+          "-Wconf:cat=scala3-migration:s",
+        ) // https://github.com/scala/scala/pull/10439
+      else
+        Seq("-Xsource:3")
     },
     libraryDependencies ++= Seq(
       "dev.rolang"           %% "dumbo"        % "0.0.6",
