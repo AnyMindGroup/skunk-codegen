@@ -16,7 +16,7 @@ import better.files.*
 
 import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
 import cats.data.NonEmptyList
-import dumbo.Dumbo
+import dumbo.{Dumbo, ConnectionConfig}
 import cats.data.Validated
 import dumbo.ResourceFile
 import fs2.io.file.Files
@@ -193,7 +193,13 @@ class PgCodeGen(
   private val dumboWithFiles = Dumbo.withFilesIn[IO](fs2.io.file.Path.fromNioPath(sourceDir.toPath()))
 
   private val dumbo = dumboWithFiles.apply(
-    sessionResource = singleSession,
+    connection = ConnectionConfig(
+      host = host,
+      user = user,
+      database = database,
+      port = port,
+      password = password,
+    ),
     defaultSchema = "public",
     schemaHistoryTable = schemaHistoryTableName,
   )
