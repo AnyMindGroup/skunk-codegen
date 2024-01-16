@@ -1,32 +1,28 @@
 package com.anymindgroup
 
-import java.io.File as JFile
-
+import better.files.*
+import cats.Show
+import cats.data.{NonEmptyList, Validated}
 import cats.effect.*
+import cats.implicits.*
+import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
+import dumbo.{ConnectionConfig, Dumbo, ResourceFile}
+import fs2.io.file.Files
+import natchez.Trace.Implicits.noop
 import skunk.*
 import skunk.codec.all.*
 import skunk.data.Type
 import skunk.implicits.*
-import cats.implicits.*
-import natchez.Trace.Implicits.noop
 
-import scala.concurrent.duration.*
-import sys.process.*
-import better.files.*
-
-import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
-import cats.data.NonEmptyList
-import dumbo.{Dumbo, ConnectionConfig}
-import cats.data.Validated
-import dumbo.ResourceFile
-import fs2.io.file.Files
+import java.io.File as JFile
 import java.nio.charset.Charset
-import cats.Show
+import scala.concurrent.duration.*
+import scala.sys.process.*
 
 class PgCodeGen(
   host: String,
   user: String,
-  database: String,
+  inputDB: Option[String],
   port: Int,
   password: Option[String],
   useDockerImage: Option[String],
@@ -37,6 +33,7 @@ class PgCodeGen(
   scalaVersion: String,
 ) {
   import PgCodeGen.*
+  val database = inputDB.getOrElse(s"pg_codegen_db_${scala.util.Random.nextInt()}")
 
   private val pkgDir                 = File(outputDir.toPath(), pkgName.replace('.', JFile.separatorChar))
   private val schemaHistoryTableName = "dumbo_history"
@@ -181,6 +178,15 @@ class PgCodeGen(
     }
   }
 
+  private val postgresDBSingleSession = Session
+    .single[IO](
+      host = host,
+      port = port,
+      user = user,
+      database = "postgres",
+      password = password,
+    )
+
   private val singleSession = Session
     .single[IO](
       host = host,
@@ -215,7 +221,12 @@ class PgCodeGen(
   }
 
   private def generatorTask: IO[List[File]] =
-    singleSession.use { s =>
+    postgresDBSingleSession.use { s =>
+      for {
+        result <- s.execute(sql"SELECT FROM pg_database WHERE datname = ${varchar}".query(bool))(database)
+        _      <- IO.whenA(result.isEmpty)(s.execute(sql"CREATE DATABASE #${database};".command).as(()))
+      } yield ()
+    } *> singleSession.use { s =>
       for {
         _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
         _     <- s.execute(sql"CREATE SCHEMA public;".command)
