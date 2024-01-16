@@ -226,7 +226,7 @@ class PgCodeGen(
         result <- s.execute(sql"SELECT FROM pg_database WHERE datname = ${varchar}".query(bool))(database)
         _      <- IO.whenA(result.isEmpty)(s.execute(sql"CREATE DATABASE #${database};".command).as(()))
       } yield ()
-    } *> singleSession.use { s =>
+    } >> singleSession.use { s =>
       for {
         _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
         _     <- s.execute(sql"CREATE SCHEMA public;".command)
@@ -259,7 +259,7 @@ class PgCodeGen(
 
   private def awaitReadiness: IO[Unit] =
     fs2.Stream
-      .repeatEval(singleSession.use(_.unique(sql"SELECT 1".query(int4)).void).attempt.map(_.swap.toOption))
+      .repeatEval(postgresDBSingleSession.use(_.unique(sql"SELECT 1".query(int4)).void).attempt.map(_.swap.toOption))
       .metered(500.millis)
       .timeout(10.seconds)
       .unNoneTerminate
