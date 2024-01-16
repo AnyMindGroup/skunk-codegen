@@ -33,7 +33,7 @@ class PgCodeGen(
   scalaVersion: String,
 ) {
   import PgCodeGen.*
-  val database = inputDB.getOrElse(s"pg_codegen_db_${scala.util.Random.nextInt()}")
+  val database = inputDB.getOrElse(s"pg_codegen_db_${Math.abs(scala.util.Random.nextInt())}")
 
   private val pkgDir                 = File(outputDir.toPath(), pkgName.replace('.', JFile.separatorChar))
   private val schemaHistoryTableName = "dumbo_history"
@@ -223,7 +223,7 @@ class PgCodeGen(
   private def generatorTask: IO[List[File]] =
     postgresDBSingleSession.use { s =>
       for {
-        result <- s.execute(sql"SELECT FROM pg_database WHERE datname = ${varchar}".query(bool))(database)
+        result <- s.execute(sql"SELECT true FROM pg_database WHERE datname = ${varchar}".query(bool))(database)
         _      <- IO.whenA(result.isEmpty)(s.execute(sql"CREATE DATABASE #${database};".command).as(()))
       } yield ()
     } >> singleSession.use { s =>

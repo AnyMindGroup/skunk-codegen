@@ -1,7 +1,6 @@
 package com.anymindgroup
 
-import cats.effect.IOApp
-import cats.effect.{ExitCode, IO}
+import cats.effect.{ExitCode, IO, IOApp}
 import better.files.*
 import com.anymindgroup.testsupport.scalaVersion
 
@@ -22,7 +21,7 @@ object RunPgCodeGen extends IOApp {
     _ <- new PgCodeGen(
            host = "localhost",
            user = "postgres",
-           database = "postgres",
+           inputDB = None,
            port = sys.env.get("CI").fold(5434)(_ => 5432),
            password = Some("postgres"),
            useDockerImage = sys.env.get("CI").fold(Option("postgres:14-alpine"))(_ => None),
