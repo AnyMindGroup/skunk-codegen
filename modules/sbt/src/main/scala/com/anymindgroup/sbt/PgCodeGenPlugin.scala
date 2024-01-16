@@ -23,7 +23,14 @@ object PgCodeGenPlugin extends AutoPlugin {
       settingKey[Option[String]]("Postgres user password")
 
     lazy val pgCodeGenDb: SettingKey[String] =
-      settingKey[String]("Postgres database name")
+      settingKey[String]("Postgres database name for create connection `postgres` is default value.")
+
+    lazy val pgCodeGenOperateDB: SettingKey[Option[String]] =
+      settingKey[Option[String]](
+        """Giving value will create new database with specified
+          | name if not exist for pgCodeGen migration process. Recommend to be configure differently
+          | with multiple module in the same project""".stripMargin
+      )
 
     lazy val pgCodeGenUseDockerImage: SettingKey[Option[String]] =
       settingKey[Option[String]]("Whether to use docker and what image")
@@ -48,6 +55,7 @@ object PgCodeGenPlugin extends AutoPlugin {
       pgCodeGenHost           := "localhost",
       pgCodeGenUser           := "postgres",
       pgCodeGenDb             := "postgres",
+      pgCodeGenOperateDB      := None,
       pgCodeGenPassword       := None,
       pgCodeGenSqlSourceDir   := file("src") / "main" / "resources" / "db" / "migration",
       pgCodeGenOutputPackage  := "anychat.chat.db",
@@ -61,6 +69,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           user = pgCodeGenUser.value,
           password = pgCodeGenPassword.value,
           database = pgCodeGenDb.value,
+          operateDatabase = pgCodeGenOperateDB.value,
           outputDir = pgCodeGenOutputDir.value,
           pkgName = pgCodeGenOutputPackage.value,
           sourceDir = pgCodeGenSqlSourceDir.value,
@@ -76,6 +85,7 @@ object PgCodeGenPlugin extends AutoPlugin {
           user = pgCodeGenUser.value,
           password = pgCodeGenPassword.value,
           database = pgCodeGenDb.value,
+          operateDatabase = pgCodeGenOperateDB.value,
           outputDir = pgCodeGenOutputDir.value,
           pkgName = pgCodeGenOutputPackage.value,
           sourceDir = pgCodeGenSqlSourceDir.value,

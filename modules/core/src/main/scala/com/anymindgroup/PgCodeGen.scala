@@ -1,32 +1,29 @@
 package com.anymindgroup
 
-import java.io.File as JFile
-
+import better.files.*
+import cats.Show
+import cats.data.{NonEmptyList, Validated}
 import cats.effect.*
+import cats.implicits.*
+import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
+import dumbo.{ConnectionConfig, Dumbo, ResourceFile}
+import fs2.io.file.Files
+import natchez.Trace.Implicits.noop
 import skunk.*
 import skunk.codec.all.*
 import skunk.data.Type
 import skunk.implicits.*
-import cats.implicits.*
-import natchez.Trace.Implicits.noop
 
-import scala.concurrent.duration.*
-import sys.process.*
-import better.files.*
-
-import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
-import cats.data.NonEmptyList
-import dumbo.{Dumbo, ConnectionConfig}
-import cats.data.Validated
-import dumbo.ResourceFile
-import fs2.io.file.Files
+import java.io.File as JFile
 import java.nio.charset.Charset
-import cats.Show
+import scala.concurrent.duration.*
+import scala.sys.process.*
 
 class PgCodeGen(
   host: String,
   user: String,
   database: String,
+  operateDatabase: Option[String],
   port: Int,
   password: Option[String],
   useDockerImage: Option[String],
@@ -181,12 +178,21 @@ class PgCodeGen(
     }
   }
 
-  private val singleSession = Session
+  private val postgresDBSingleSession = Session
     .single[IO](
       host = host,
       port = port,
       user = user,
       database = database,
+      password = password,
+    )
+
+  private val singleSession = Session
+    .single[IO](
+      host = host,
+      port = port,
+      user = user,
+      database = operateDatabase.getOrElse(database),
       password = password,
     )
 
@@ -196,7 +202,7 @@ class PgCodeGen(
     connection = ConnectionConfig(
       host = host,
       user = user,
-      database = database,
+      database = operateDatabase.getOrElse(database),
       port = port,
       password = password,
     ),
@@ -215,7 +221,16 @@ class PgCodeGen(
   }
 
   private def generatorTask: IO[List[File]] =
-    singleSession.use { s =>
+    postgresDBSingleSession.use { s =>
+      operateDatabase match {
+        case Some(opDBName) =>
+          for {
+            result <- s.execute(sql"SELECT true FROM pg_database WHERE datname = ${varchar}".query(bool))(opDBName)
+            _      <- IO.whenA(result.isEmpty)(s.execute(sql"CREATE DATABASE #${opDBName};".command).as(()))
+          } yield ()
+        case None => IO.unit
+      }
+    } >> singleSession.use { s =>
       for {
         _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)
         _     <- s.execute(sql"CREATE SCHEMA public;".command)
@@ -248,7 +263,7 @@ class PgCodeGen(
 
   private def awaitReadiness: IO[Unit] =
     fs2.Stream
-      .repeatEval(singleSession.use(_.unique(sql"SELECT 1".query(int4)).void).attempt.map(_.swap.toOption))
+      .repeatEval(postgresDBSingleSession.use(_.unique(sql"SELECT 1".query(int4)).void).attempt.map(_.swap.toOption))
       .metered(500.millis)
       .timeout(10.seconds)
       .unNoneTerminate
