@@ -22,7 +22,8 @@ import scala.sys.process.*
 class PgCodeGen(
   host: String,
   user: String,
-  inputDB: Option[String],
+  database: String,
+  operateDatabase: Option[String],
   port: Int,
   password: Option[String],
   useDockerImage: Option[String],
@@ -33,7 +34,6 @@ class PgCodeGen(
   scalaVersion: String,
 ) {
   import PgCodeGen.*
-  val database = inputDB.getOrElse(s"pg_codegen_db_${Math.abs(scala.util.Random.nextInt())}")
 
   private val pkgDir                 = File(outputDir.toPath(), pkgName.replace('.', JFile.separatorChar))
   private val schemaHistoryTableName = "dumbo_history"
@@ -183,7 +183,7 @@ class PgCodeGen(
       host = host,
       port = port,
       user = user,
-      database = "postgres",
+      database = database,
       password = password,
     )
 
@@ -192,7 +192,7 @@ class PgCodeGen(
       host = host,
       port = port,
       user = user,
-      database = database,
+      database = operateDatabase.getOrElse(database),
       password = password,
     )
 
@@ -202,7 +202,7 @@ class PgCodeGen(
     connection = ConnectionConfig(
       host = host,
       user = user,
-      database = database,
+      database = operateDatabase.getOrElse(database),
       port = port,
       password = password,
     ),
@@ -222,10 +222,14 @@ class PgCodeGen(
 
   private def generatorTask: IO[List[File]] =
     postgresDBSingleSession.use { s =>
-      for {
-        result <- s.execute(sql"SELECT true FROM pg_database WHERE datname = ${varchar}".query(bool))(database)
-        _      <- IO.whenA(result.isEmpty)(s.execute(sql"CREATE DATABASE #${database};".command).as(()))
-      } yield ()
+      operateDatabase match {
+        case Some(opDBName) =>
+          for {
+            result <- s.execute(sql"SELECT true FROM pg_database WHERE datname = ${varchar}".query(bool))(opDBName)
+            _      <- IO.whenA(result.isEmpty)(s.execute(sql"CREATE DATABASE #${opDBName};".command).as(()))
+          } yield ()
+        case None => IO.unit
+      }
     } >> singleSession.use { s =>
       for {
         _     <- s.execute(sql"DROP SCHEMA public CASCADE;".command)

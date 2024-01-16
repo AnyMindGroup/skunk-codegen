@@ -21,7 +21,8 @@ object RunPgCodeGen extends IOApp {
     _ <- new PgCodeGen(
            host = "localhost",
            user = "postgres",
-           inputDB = None,
+           database = "postgres",
+           operateDatabase = Some("new_db"),
            port = sys.env.get("CI").fold(5434)(_ => 5432),
            password = Some("postgres"),
            useDockerImage = sys.env.get("CI").fold(Option("postgres:14-alpine"))(_ => None),
