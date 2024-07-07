@@ -1,6 +1,6 @@
-crossScalaVersions := Seq("3.3.1", "2.13.12")
+crossScalaVersions := Seq("3.3.3", "2.13.14")
 
-val skunkVersion = "0.6.0"
+val skunkVersion = "0.6.4"
 
 lazy val testRoot = (project in file("."))
   .enablePlugins(PgCodeGenPlugin)
