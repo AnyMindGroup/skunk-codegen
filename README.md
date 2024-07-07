@@ -1,6 +1,6 @@
 # Sbt plugin for generating source code from Postgres database schema
 
-[![CircleCI](https://dl.circleci.com/status-badge/img/gh/AnyMindGroup/sbt-skunk-codegen/tree/master.svg?style=svg&circle-token=af4c1892eed3931096ecec734e8e318c8cc192a4)](https://dl.circleci.com/status-badge/redirect/gh/AnyMindGroup/sbt-skunk-codegen/tree/master)
+![Maven Central Version](https://img.shields.io/maven-central/v/com.anymindgroup/skunk-codegen_2.12)
 
 ## Usage
 
