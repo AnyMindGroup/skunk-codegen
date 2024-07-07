@@ -1,5 +1,5 @@
 package com.anymindgroup
 
 object testsupport {
-  val scalaVersion: String = "2.13.12"
+  val scalaVersion: String = "2.13.x"
 }

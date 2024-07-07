@@ -1,0 +1,22 @@
+name: CI
+on:
+  pull_request:
+  push:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: 21
+        cache: sbt
+    - name: Start up Postgres
+      run: docker run --rm -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16-alpine
+    - name: Generate code
+      run: sbt '+core/Test/runMain com.anymindgroup.RunPgCodeGen'
+    - name: Test generated code
+      run: sbt '++2.13 core/Test/runMain com.anymindgroup.GeneratedCodeTest; ++3.3 core/Test/runMain com.anymindgroup.GeneratedCodeTest'

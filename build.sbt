@@ -1,6 +1,6 @@
 lazy val scala212 = "2.12.18"
-lazy val scala213 = "2.13.12"
-lazy val scala3   = "3.3.1"
+lazy val scala213 = "2.13.14"
+lazy val scala3   = "3.3.3"
 lazy val allScala = Seq(scala212, scala213, scala3)
 
 ThisBuild / organization := "com.anymindgroup"
