@@ -25,16 +25,19 @@ lazy val myProject = (project in file("."))
     pgCodeGenUser           := "postgres", // default: "postgres"
     pgCodeGenDb             := "postgres", // default: "postgres"
     pgCodeGenPassword       := Some("postgres"), // default: None
+    // pgCodeGenOperateDB value will create new database with specified
+    // name if not exist for pgCodeGen migration process. Recommend to be configure differently
+    // with multiple module in the same project
+    pgCodeGenOperateDB      := Some("postgres_b") // default: None
 
-    // whether to start a postgres docker container on running the task (default: true)
-    pgCodeGenUseDocker      := true,
+    // whether to start a postgres docker container and what image to use on running the task (default: Some("postgres:16-alpine"))
+    pgCodeGenUseDockerImage      := Some("postgres:16-alpine"),
 
     // path to directory with sql migration script
     pgCodeGenSqlSourceDir   := file("src") / "main" / "resources" / "db" / "migration",
     
     // list of tables to exclude from generator
-    pgCodeGenExcludedTables := List("to_exclude_table_name"),
-    // ...
+    pgCodeGenExcludedTables := List("to_exclude_table_name")
   )
 ```
 See all available settings under [PgCodeGenPlugin.scala](modules/sbt/src/main/scala/com/anymindgroup/sbt/PgCodeGenPlugin.scala).  
@@ -42,11 +45,11 @@ See example setup under [sbt test](modules/sbt/src/sbt-test/test/basic).
 
 Generator will run on changes to sql migration scripts.  
 Watch and re-compile on changes by e.g.:
-```
+```shell
 sbt ~compile
 ```
 
 To force code re-generation, execute the task
-```
+```shell
 sbt pgCodeGen
 ```

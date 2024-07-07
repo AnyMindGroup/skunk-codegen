@@ -61,7 +61,7 @@ object PgCodeGenPlugin extends AutoPlugin {
       pgCodeGenOutputPackage  := "anychat.chat.db",
       pgCodeGenOutputDir      := (Compile / sourceManaged).value,
       pgCodeGenExcludedTables := Nil,
-      pgCodeGenUseDockerImage := Some("postgres:14-alpine"),
+      pgCodeGenUseDockerImage := Some("postgres:16-alpine"),
       pgCodeGen := {
         new PgCodeGen(
           host = pgCodeGenHost.value,
