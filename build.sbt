@@ -10,6 +10,7 @@ ThisBuild / developers := List(
   Developer("dutch3883", "Panuwach Boonyasup", "@dutch3883", url("https://github.com/dutch3883")),
   Developer("qhquanghuy", "Huy Nguyen", "@qhquanghuy", url("https://github.com/qhquanghuy")),
 )
+ThisBuild / sonatypeCredentialHost := xerial.sbt.Sonatype.sonatypeCentralHost
 
 lazy val betterFilesVersion = "3.9.2"
 lazy val commonSettings = List(
@@ -19,15 +20,6 @@ lazy val commonSettings = List(
     else
       Seq(compilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"))
   },
-  credentials += {
-    for {
-      username <- sys.env.get("ARTIFACT_REGISTRY_USERNAME")
-      apiKey   <- sys.env.get("ARTIFACT_REGISTRY_PASSWORD")
-    } yield Credentials("https://asia-maven.pkg.dev", "asia-maven.pkg.dev", username, apiKey)
-  }.getOrElse(Credentials(Path.userHome / ".ivy2" / ".credentials")),
-  resolvers ++= Seq(
-    "AnyChat Registry Release" at "https://asia-maven.pkg.dev/anychat-staging/maven-release"
-  ),
   version ~= { v => if (v.contains('+')) s"${v.replace('+', '-')}-SNAPSHOT" else v },
 )
 
@@ -44,7 +36,7 @@ val noPublishSettings = List(
 )
 
 val releaseSettings = List(
-  publishTo := Some("AnyChat Maven" at "https://asia-maven.pkg.dev/anychat-staging/maven")
+  publishTo := sonatypePublishToBundle.value
 )
 
 lazy val core = (project in file("modules/core"))

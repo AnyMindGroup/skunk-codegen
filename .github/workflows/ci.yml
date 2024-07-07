@@ -19,4 +19,27 @@ jobs:
     - name: Generate code
       run: sbt '+core/Test/runMain com.anymindgroup.RunPgCodeGen'
     - name: Test generated code
-      run: sbt '++2.13 core/Test/runMain com.anymindgroup.GeneratedCodeTest; ++3.3 core/Test/runMain com.anymindgroup.GeneratedCodeTest'
+      run: sbt '++2.13 Test/runMain com.anymindgroup.GeneratedCodeTest; ++3.3 Test/runMain com.anymindgroup.GeneratedCodeTest'
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    needs:
+    - test
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+    - name: Git Checkout
+      uses: actions/checkout@v4
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: 21
+        cache: sbt
+    - name: Release
+      run: sbt '++2.12 publishSigned; sonatypeCentralRelease'
+      env:
+        PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+        PGP_SECRET: ${{ secrets.PGP_SECRET }}
+        SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
