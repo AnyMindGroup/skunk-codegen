@@ -3,8 +3,18 @@ lazy val scala213 = "2.13.14"
 lazy val scala3   = "3.3.3"
 lazy val allScala = Seq(scala212, scala213, scala3)
 
-ThisBuild / organization := "com.anymindgroup"
-ThisBuild / licenses     := Seq(License.Apache2)
+ThisBuild / organization         := "com.anymindgroup"
+ThisBuild / organizationName     := "AnyMind Group"
+ThisBuild / organizationHomepage := Some(url("https://anymindgroup.com"))
+ThisBuild / licenses             := Seq(License.Apache2)
+ThisBuild / homepage             := Some(url("https://github.com/AnyMindGroup/sbt-skunk-codegen"))
+ThisBuild / scmInfo := Some(
+  ScmInfo(
+    url("https://github.com/AnyMindGroup/sbt-skunk-codegen"),
+    "scm:git@github.com:AnyMindGroup/sbt-skunk-codegen.git",
+  )
+)
+ThisBuild / description := "SBT plugin for generating source code from Postgres database schema."
 ThisBuild / developers := List(
   Developer("rolang", "Roman Langolf", "@rolang", url("https://github.com/rolang")),
   Developer("dutch3883", "Panuwach Boonyasup", "@dutch3883", url("https://github.com/dutch3883")),

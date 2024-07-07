@@ -44,12 +44,6 @@ jobs:
         distribution: temurin
         java-version: 21
         cache: sbt
-    - name: Import signing key
-      if: env.PGP_SECRET != '' && env.PGP_PASSPHRASE == ''
-      env:
-        PGP_SECRET: ${{ secrets.PGP_SECRET }}
-        PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
-      run: echo $PGP_SECRET | base64 -d -i - | gpg --import
     - name: Import signing key and strip passphrase
       if: env.PGP_SECRET != '' && env.PGP_PASSPHRASE != ''
       env:
