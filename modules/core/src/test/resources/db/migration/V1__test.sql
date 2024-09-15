@@ -44,3 +44,12 @@ CREATE MATERIALIZED VIEW public.test_materialized_view AS SELECT id,
     name_2,
     number
    FROM test WITH DATA;
+
+
+CREATE VIEW public.test_view AS SELECT id,
+    created_at,
+    name,
+    name_2,
+    number,
+    numeric_default
+   FROM test;

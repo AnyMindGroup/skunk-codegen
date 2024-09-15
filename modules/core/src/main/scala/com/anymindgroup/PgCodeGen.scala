@@ -178,6 +178,15 @@ class PgCodeGen(
     }
   }
 
+  private def getViews(s: Session[IO]): IO[Set[TableName]] = {
+    val q: Query[Void, String] =
+      sql"""SELECT table_name FROM information_schema.VIEWS WHERE table_schema = 'public'
+      UNION
+      SELECT matviewname FROM pg_matviews WHERE schemaname = 'public';""".query(name)
+
+    s.execute(q).map(_.toSet)
+  }
+
   private val postgresDBSingleSession = Session
     .single[IO](
       host = host,
@@ -236,9 +245,9 @@ class PgCodeGen(
         _     <- s.execute(sql"CREATE SCHEMA public;".command)
         _     <- dumbo.runMigration.void
         enums <- getEnums(s)
-        ((columns, indexes), constraints) <-
-          getColumns(s, enums).parProduct(getIndexes(s)).parProduct(getConstraints(s))
-        tables = toTables(columns, indexes, constraints)
+        (((columns, indexes), constraints), views) <-
+          getColumns(s, enums).parProduct(getIndexes(s)).parProduct(getConstraints(s)).parProduct(getViews(s))
+        tables = toTables(columns, indexes, constraints, views)
         files = pkgFiles(tables, enums) ::: tables.flatMap { table =>
                   rowFileContent(table) match {
                     case None => Nil
@@ -289,6 +298,7 @@ class PgCodeGen(
     columns: TableMap[Column],
     indexes: TableMap[Index],
     constraints: TableMap[Constraint],
+    views: Set[TableName],
   ): List[Table] = {
 
     def findAutoIncColumns(tableName: TableName): List[Column] =
@@ -322,6 +332,7 @@ class PgCodeGen(
         constraints = tableConstraints,
         indexes = indexes.getOrElse(tname, Nil),
         autoIncFk = autoIncFk,
+        isView = views.contains(tname),
       )
     }
   }
@@ -511,28 +522,31 @@ class PgCodeGen(
       """
     }
 
-    val rowUpdateClassData = primaryUniqueConstraint match {
-      case Some(cstr) =>
-        columns.filterNot(cstr.containsColumn) match {
-          case Nil => (Nil, Nil)
-          case updateCols =>
-            val colsData     = toUpdateClassPropsStr(updateCols)
-            val fragmentData = toUpdateFragment(updateCols)
-            (
-              updateCols,
-              List(
-                "",
-                s"final case class $rowUpdateClassName(",
-                s"$colsData",
-                ") {",
-                fragmentData,
-                "}",
-              ),
-            )
-        }
+    val rowUpdateClassData =
+      if (table.isView) (Nil, Nil)
+      else
+        primaryUniqueConstraint match {
+          case Some(cstr) =>
+            columns.filterNot(cstr.containsColumn) match {
+              case Nil => (Nil, Nil)
+              case updateCols =>
+                val colsData     = toUpdateClassPropsStr(updateCols)
+                val fragmentData = toUpdateFragment(updateCols)
+                (
+                  updateCols,
+                  List(
+                    "",
+                    s"final case class $rowUpdateClassName(",
+                    s"$colsData",
+                    ") {",
+                    fragmentData,
+                    "}",
+                  ),
+                )
+            }
 
-      case None => (Nil, Nil)
-    }
+          case None => (Nil, Nil)
+        }
 
     def withImportsStr = rowUpdateClassData match {
       case (Nil, Nil) => ""
@@ -617,64 +631,66 @@ class PgCodeGen(
     }
   }
 
-  private def writeStatements(table: Table): String = {
-    import table.*
+  private def writeStatements(table: Table): String =
+    if (table.isView) ""
+    else {
+      import table.*
 
-    val allCols                        = autoIncFk ::: columns
-    val allColNames                    = allCols.map(_.columnName).mkString(",")
-    val (insertScalaType, insertCodec) = queryTypesStr(table)
+      val allCols                        = autoIncFk ::: columns
+      val allColNames                    = allCols.map(_.columnName).mkString(",")
+      val (insertScalaType, insertCodec) = queryTypesStr(table)
 
-    val returningStatement = autoIncColumns match {
-      case Nil => ""
-      case _   => autoIncColumns.map(_.columnName).mkString(" RETURNING ", ",", "")
-    }
-    val returningType = autoIncColumns.map(_.scalaType).mkString(" *: ")
-    val fragmentType = autoIncColumns match {
-      case Nil => "command"
-      case _   => s"query(${autoIncColumns.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" *: ")})"
-    }
-
-    val upsertQ = primaryUniqueConstraint.map { cstr =>
-      val queryType = autoIncColumns match {
-        case Nil => s"Command[$insertScalaType *: updateFr.A *: EmptyTuple]"
-        case _   => s"Query[$insertScalaType *: updateFr.A *: EmptyTuple, $returningType]"
+      val returningStatement = autoIncColumns match {
+        case Nil => ""
+        case _   => autoIncColumns.map(_.columnName).mkString(" RETURNING ", ",", "")
+      }
+      val returningType = autoIncColumns.map(_.scalaType).mkString(" *: ")
+      val fragmentType = autoIncColumns match {
+        case Nil => "command"
+        case _   => s"query(${autoIncColumns.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" *: ")})"
       }
 
-      s"""|  def upsertQuery(updateFr: AppliedFragment): $queryType =
-          |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})
-          |          ON CONFLICT ON CONSTRAINT ${cstr.name}
-          |          DO UPDATE SET $${updateFr.fragment}$returningStatement\"\"\".$fragmentType""".stripMargin
-    }
+      val upsertQ = primaryUniqueConstraint.map { cstr =>
+        val queryType = autoIncColumns match {
+          case Nil => s"Command[$insertScalaType *: updateFr.A *: EmptyTuple]"
+          case _   => s"Query[$insertScalaType *: updateFr.A *: EmptyTuple, $returningType]"
+        }
 
-    val queryType = autoIncColumns match {
-      case Nil => s"Command[$insertScalaType]"
-      case _   => s"Query[$insertScalaType, $returningType]"
-    }
-    val insertQ =
-      s"""|  def insertQuery(ignoreConflict: Boolean = true): $queryType = {
-          |    val onConflictFr = if (ignoreConflict) const" ON CONFLICT DO NOTHING" else const""
-          |    sql\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})$$onConflictFr$returningStatement\".$fragmentType
-          |  }""".stripMargin
+        s"""|  def upsertQuery(updateFr: AppliedFragment): $queryType =
+            |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})
+            |          ON CONFLICT ON CONSTRAINT ${cstr.name}
+            |          DO UPDATE SET $${updateFr.fragment}$returningStatement\"\"\".$fragmentType""".stripMargin
+      }
 
-    val insertCol =
-      s"""|
-          |  def insert[A](cols: Cols[A]): Command[A] =
-          |    sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})\".command
-          |
-          |  def insert0[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING")(implicit
-          |    ev: Void =:= B
-          |  ): Command[A] =
-          |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec}) " ~ rest).command.contramap[A](a => (a, ev.apply(Void)))
-          |
-          |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[(A, B)] =
-          |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})" ~ rest).command
-          |""".stripMargin
-    List(
-      upsertQ.getOrElse(""),
-      insertQ,
-      insertCol,
-    ).mkString("\n\n")
-  }
+      val queryType = autoIncColumns match {
+        case Nil => s"Command[$insertScalaType]"
+        case _   => s"Query[$insertScalaType, $returningType]"
+      }
+      val insertQ =
+        s"""|  def insertQuery(ignoreConflict: Boolean = true): $queryType = {
+            |    val onConflictFr = if (ignoreConflict) const" ON CONFLICT DO NOTHING" else const""
+            |    sql\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})$$onConflictFr$returningStatement\".$fragmentType
+            |  }""".stripMargin
+
+      val insertCol =
+        s"""|
+            |  def insert[A](cols: Cols[A]): Command[A] =
+            |    sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})\".command
+            |
+            |  def insert0[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING")(implicit
+            |    ev: Void =:= B
+            |  ): Command[A] =
+            |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec}) " ~ rest).command.contramap[A](a => (a, ev.apply(Void)))
+            |
+            |  def insert[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING"): Command[(A, B)] =
+            |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})" ~ rest).command
+            |""".stripMargin
+      List(
+        upsertQ.getOrElse(""),
+        insertQ,
+        insertCol,
+      ).mkString("\n\n")
+    }
 
   private def tableColumns(table: Table): (Option[String], String) = {
     val allCols = table.autoIncColumns ::: table.autoIncFk ::: table.columns
@@ -837,6 +853,7 @@ object PgCodeGen {
     constraints: List[Constraint],
     indexes: List[Index],
     autoIncFk: List[Column],
+    isView: Boolean,
   ) {
     val tableClassName: String     = toTableClassName(name)
     val rowClassName: String       = toRowClassName(name)
