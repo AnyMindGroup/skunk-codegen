@@ -31,6 +31,7 @@ lazy val commonSettings = List(
       Seq(compilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"))
   },
   version ~= { v => if (v.contains('+')) s"${v.replace('+', '-')}-SNAPSHOT" else v },
+  Test / scalacOptions --= Seq("-Xfatal-warnings"),
 )
 
 lazy val sbtSkunkCodegen = (project in file("."))

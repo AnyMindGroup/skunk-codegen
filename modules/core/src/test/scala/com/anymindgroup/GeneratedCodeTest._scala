@@ -2,7 +2,6 @@ package com.anymindgroup
 
 import cats.effect.IOApp
 import cats.effect.{ExitCode, IO}
-import skunk.Session
 import natchez.Trace.Implicits.noop
 import com.anymindgroup.generated.TestBTable
 import com.anymindgroup.generated.TestMaterializedViewTable
