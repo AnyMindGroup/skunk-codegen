@@ -85,12 +85,12 @@ object GeneratedCodeTest extends IOApp {
         _               <- s.prepare(TestTable.insertQuery(ignoreConflict = true))
         res             <- p.option((testRow, testUpdateFr.argument))
         _               <- IO.raiseWhen(res.isEmpty)(new Throwable("test A did not return generated columns"))
-        id               = res.get.head
-        _               <- IO.raiseWhen(res.get.tail.head != 2)(new Throwable("unexpected result for generated column"))
+        id              = res.get._1
+        _               <- IO.raiseWhen(res.get._2 != 2)(new Throwable("unexpected result for generated column"))
         all             <- s.execute(TestTable.selectAll())
-        allWithId       <- s.execute(TestTable.selectAllWithId())
+        allWithGen      <- s.execute(TestTable.selectAllWithGenerated())
         _               <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
-        _               <- IO.raiseWhen(allWithId.map(_._2) != List(testRow))(new Throwable("test A result with id not equal"))
+        _               <- IO.raiseWhen(allWithGen.map(_._3) != List(testRow))(new Throwable("test A result with id not equal"))
         aliasedTestTable = TestTable.withAlias("t")
         idAndName2       = aliasedTestTable.column.id ~ aliasedTestTable.column.name_2
         xs <-

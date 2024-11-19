@@ -726,7 +726,7 @@ class PgCodeGen(
       val colNamesStr = (generatedColumns ::: columns).map(_.columnName).mkString(", ")
 
       s"""
-         |  def selectAllWithId[A](addClause: Fragment[A] = Fragment.empty): Query[A, $sTypes *: $rowClassName *: EmptyTuple] =
+         |  def selectAllWithGenerated[A](addClause: Fragment[A] = Fragment.empty): Query[A, $sTypes *: $rowClassName *: EmptyTuple] =
          |    sql"SELECT $colNamesStr FROM #$$tableName $$addClause".query($types *: ${rowClassName}.codec)
          |
          """.stripMargin
