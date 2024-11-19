@@ -629,7 +629,7 @@ class PgCodeGen(
     if (autoIncFk.isEmpty) {
       (rowClassName, s"${rowClassName}.codec")
     } else {
-      val autoIncFkCodecs     = autoIncFk.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" *: ")
+      val autoIncFkCodecs     = autoIncFk.map(_.codecName).mkString(" *: ")
       val autoIncFkScalaTypes = autoIncFk.map(_.scalaType).mkString(" *: ")
       (s"($autoIncFkScalaTypes ~ $rowClassName)", s"$autoIncFkCodecs ~ ${rowClassName}.codec")
     }
@@ -653,7 +653,7 @@ class PgCodeGen(
         .mkString("", " *: ", if (generatedColumns.length > 1) " *: EmptyTuple" else "")
       val fragmentType = generatedColumns match {
         case Nil => "command"
-        case _   => s"query(${generatedColumns.map(col => s"skunk.codec.all.${col.pgType.name}").mkString(" *: ")})"
+        case _   => s"query(${generatedColumns.map(_.codecName).mkString(" *: ")})"
       }
 
       val upsertQ = primaryUniqueConstraint.map { cstr =>
