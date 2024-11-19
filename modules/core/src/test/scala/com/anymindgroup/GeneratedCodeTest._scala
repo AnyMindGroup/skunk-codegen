@@ -16,7 +16,7 @@ import better.files.File
 import skunk.*
 import skunk.codec.all.*
 import skunk.util.Origin
-import skunk.{Command as SqlCommand}
+import skunk.Command as SqlCommand
 import cats.implicits.*
 import java.time.temporal.ChronoUnit
 import java.time.ZoneOffset
@@ -44,7 +44,7 @@ object GeneratedCodeTest extends IOApp {
         tlaVar = "abc",
         numericDefault = BigDecimal(1),
         numeric24p = BigDecimal(2),
-        numeric16p2s = BigDecimal(3)
+        numeric16p2s = BigDecimal(3),
       ).withUpdateAll
 
       val testBRow = TestBRow(
@@ -83,8 +83,10 @@ object GeneratedCodeTest extends IOApp {
         // Test table
         p               <- s.prepare(TestTable.upsertQuery(testUpdateFr))
         _               <- s.prepare(TestTable.insertQuery(ignoreConflict = true))
-        id              <- p.option((testRow, testUpdateFr.argument))
-        _               <- IO.raiseWhen(id.isEmpty)(new Throwable("test A did not return a generated id"))
+        res             <- p.option((testRow, testUpdateFr.argument))
+        _               <- IO.raiseWhen(res.isEmpty)(new Throwable("test A did not return generated columns"))
+        id               = res.get.head
+        _               <- IO.raiseWhen(res.get.tail.head != 2)(new Throwable("unexpected result for generated column"))
         all             <- s.execute(TestTable.selectAll())
         allWithId       <- s.execute(TestTable.selectAllWithId())
         _               <- IO.raiseWhen(all != List(testRow))(new Throwable("test A result not equal"))
@@ -96,7 +98,7 @@ object GeneratedCodeTest extends IOApp {
             sql"""SELECT #${idAndName2.aliasedName},#${aliasedTestTable.column.name.fullName} FROM #${TestTable.tableName} #${aliasedTestTable.tableName}"""
               .query(idAndName2.codec ~ TestTable.column.name.codec)
           )
-        _ <- IO.raiseWhen(xs != List((id.get, testRow.name2) -> testRow.name))(
+        _ <- IO.raiseWhen(xs != List((id, testRow.name2) -> testRow.name))(
                new Throwable("test A select fields not equal")
              )
         all2 <- s.execute(TestTable.select(TestTable.all))
@@ -179,10 +181,10 @@ object GeneratedCodeTest extends IOApp {
         _ <- IO.raiseWhen(
                Some(testBRow.copy(val27 = None, val2 = "updated_val_2", val14 = "updated_val_14")) != loadedById
              )(new Throwable("test B result missing update"))
-        _ <- s.execute(sql"REFRESH MATERIALIZED VIEW test_materialized_view".command)
+        _      <- s.execute(sql"REFRESH MATERIALIZED VIEW test_materialized_view".command)
         result <- s.execute(TestMaterializedViewTable.selectAll())
-        _ <-  IO.raiseWhen(result.isEmpty)(new Throwable(s"materialized view doesn't have correct value: ${result}"))
-        _ <- IO.println("Test successful!")
+        _      <- IO.raiseWhen(result.isEmpty)(new Throwable(s"materialized view doesn't have correct value: ${result}"))
+        _      <- IO.println("Test successful!")
       } yield ()
 
     }
