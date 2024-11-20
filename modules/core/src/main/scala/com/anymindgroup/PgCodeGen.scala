@@ -720,7 +720,7 @@ class PgCodeGen(
   private def selectAllStatement(table: Table): String = {
     import table.*
 
-    val autoIncStm = if (generatedColumns.nonEmpty) {
+    val generatedColStm = if (generatedColumns.nonEmpty) {
       val types       = generatedColumns.map(_.codecName).mkString(" *: ")
       val sTypes      = generatedColumns.map(_.scalaType).mkString(" *: ")
       val colNamesStr = (generatedColumns ::: columns).map(_.columnName).mkString(", ")
@@ -746,7 +746,7 @@ class PgCodeGen(
     val selectCol = s"""|  def select[A, B](cols: Cols[A], rest: Fragment[B] = Fragment.empty): Query[B, A] =
                         |    sql"SELECT #$${cols.name} FROM #$$tableName $$rest".query(cols.codec)
                         |""".stripMargin
-    autoIncStm ++ defaultStm ++ selectCol
+    generatedColStm ++ defaultStm ++ selectCol
   }
 
   private def lastModified(modified: List[Long]): Option[Long] =
