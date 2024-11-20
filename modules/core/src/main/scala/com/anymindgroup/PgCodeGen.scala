@@ -656,9 +656,9 @@ class PgCodeGen(
           case _   => s"Query[$insertScalaType *: updateFr.A *: EmptyTuple, $returningType]"
         }
 
-        s"""|  def upsertQuery(updateFr: AppliedFragment): $queryType =
+        s"""|  def upsertQuery(updateFr: AppliedFragment, constraint: Constraint = Constraint("${cstr.name}")): $queryType =
             |    sql\"\"\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})
-            |          ON CONFLICT ON CONSTRAINT ${cstr.name}
+            |          ON CONFLICT ON CONSTRAINT #$${constraint.name}
             |          DO UPDATE SET $${updateFr.fragment}$returningStatement\"\"\".$fragmentType""".stripMargin
       }
 
