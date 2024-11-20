@@ -14,7 +14,9 @@ CREATE TABLE test (
   tla_var varchar(3) NOT NULL,
   numeric_default numeric NOT NULL,
   numeric_24p numeric(24) NOT NULL,
-  numeric_16p_2s numeric(16, 2) NOT NULL
+  numeric_16p_2s numeric(16, 2) NOT NULL,
+  gen INT NOT NULL GENERATED ALWAYS AS (1 + 1) STORED,
+  gen_opt INT GENERATED ALWAYS AS (1 + 1) STORED
 );
 
 CREATE TABLE test_ref_only (
