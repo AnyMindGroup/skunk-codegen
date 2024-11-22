@@ -19,6 +19,7 @@ ThisBuild / developers := List(
   Developer("rolang", "Roman Langolf", "@rolang", url("https://github.com/rolang")),
   Developer("dutch3883", "Panuwach Boonyasup", "@dutch3883", url("https://github.com/dutch3883")),
   Developer("qhquanghuy", "Huy Nguyen", "@qhquanghuy", url("https://github.com/qhquanghuy")),
+  Developer("alialiusefi", "Ali Al-Yousefi", "@alialiusefi", url("https://github.com/alialiusefi"))
 )
 ThisBuild / sonatypeCredentialHost := xerial.sbt.Sonatype.sonatypeCentralHost
 
