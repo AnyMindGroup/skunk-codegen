@@ -16,7 +16,7 @@ jobs:
       - uses: VirtusLab/scala-cli-setup@main
         with:
           jvm: temurin:21
-      - run: scala compile .
+      - run: scala-cli compile .
   # TODO update release    
   release:
     name: Release
