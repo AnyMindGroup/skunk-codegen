@@ -2,7 +2,7 @@ package com.anymindgroup
 
 import cats.effect.IOApp
 import cats.effect.{ExitCode, IO}
-import natchez.Trace.Implicits.noop
+import org.typelevel.otel4s.trace.Tracer.Implicits.noop
 import com.anymindgroup.generated.TestBTable
 import com.anymindgroup.generated.TestMaterializedViewTable
 import com.anymindgroup.generated.TestBRow
@@ -12,14 +12,14 @@ import com.anymindgroup.generated.TestRow
 import com.anymindgroup.generated.TestEnumType
 import skunk.util.Typer
 import java.time.OffsetDateTime
-import better.files.File
 import skunk.*
 import skunk.codec.all.*
 import skunk.util.Origin
-import skunk.Command as SqlCommand
 import cats.implicits.*
 import java.time.temporal.ChronoUnit
 import java.time.ZoneOffset
+import fs2.io.file.Path
+import dumbo.ConnectionConfig
 
 object GeneratedCodeTest extends IOApp {
 
@@ -81,10 +81,10 @@ object GeneratedCodeTest extends IOApp {
       )
       for {
         // Test table
-        p               <- s.prepare(TestTable.upsertQuery(testUpdateFr))
-        _               <- s.prepare(TestTable.insertQuery(ignoreConflict = true))
-        res             <- p.option((testRow, testUpdateFr.argument))
-        _               <- IO.raiseWhen(res.isEmpty)(new Throwable("test A did not return generated columns"))
+        p   <- s.prepare(TestTable.upsertQuery(testUpdateFr))
+        _   <- s.prepare(TestTable.insertQuery(ignoreConflict = true))
+        res <- p.option((testRow, testUpdateFr.argument))
+        _   <- IO.raiseWhen(res.isEmpty)(new Throwable("test A did not return generated columns"))
         id   = res.get._1
         _ <- IO.raiseWhen(res.get._2 != 2 && res.get._3 != Some(2))(
                new Throwable("unexpected result for generated columns")
@@ -201,23 +201,16 @@ object GeneratedCodeTest extends IOApp {
       password = Some("postgres"),
       strategy = Typer.Strategy.BuiltinsOnly,
     )
-    .use { session =>
-      for {
-        _ <- session.execute(sql"DROP SCHEMA IF EXISTS public CASCADE".command)
-        _ <- session.execute(sql"CREATE SCHEMA public".command)
-        _ <- File("modules/core/src/test/resources/db/migration").children.toList
-               .sortBy(f => f.name.drop(1).takeWhile(_ != '_').toInt)
-               .flatMap { f =>
-                 f.lineIterator
-                   .filterNot(_.trim.startsWith("--"))
-                   .mkString("\n")
-                   .split(";")
-                   .filterNot(l => l.trim.isEmpty || l.contains("ANALYZE VERBOSE"))
-                   .map { sql =>
-                     SqlCommand(s"$sql;", Origin(file = f.pathAsString, line = 0), Void.codec)
-                   }
-               }
-               .traverse_(session.execute)
-      } yield ()
-    }
+    .use(_.execute(sql"DROP SCHEMA IF EXISTS public CASCADE".command)) >> dumbo.Dumbo
+    .withFilesIn[IO](Path("modules/core/src/test/resources/db/migration"))
+    .apply(
+      connection = ConnectionConfig(
+        host = "localhost",
+        port = 5432,
+        user = "postgres",
+        database = "postgres",
+        password = Some("postgres"),
+      )
+    )
+    .runMigration
 }

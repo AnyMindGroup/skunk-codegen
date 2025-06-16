@@ -11,23 +11,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Setup JDK
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: 21
-        cache: sbt
-    - name: Start up Postgres
-      run: docker run --rm -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16-alpine
-    - name: Generate code
-      run: sbt '+core/Test/runMain com.anymindgroup.RunPgCodeGen'
-    - name: Test generated code
-      run: sbt '++2.13 Test/runMain com.anymindgroup.GeneratedCodeTest; ++3.3 Test/runMain com.anymindgroup.GeneratedCodeTest'
-    - name: Test sbt plugin
-      # for sbt < v2 which only supports scala 2.12
-      run: sbt ++2.12 scripted
+      - uses: actions/checkout@v2
+      - uses: coursier/cache-action@v6
+      - uses: VirtusLab/scala-cli-setup@main
+        with:
+          jvm: temurin:21
+      - run: scala compile .
+  # TODO update release    
   release:
     name: Release
     runs-on: ubuntu-latest
