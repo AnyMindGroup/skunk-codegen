@@ -1,15 +1,21 @@
-package com.anymindgroup
+//> using scala 3.7.1
+//> using dep dev.rolang::dumbo:0.5.5
+//> using platform jvm
+//> using jvm system
+//> using file codegentest/generated
+
+package codegentest
 
 import cats.effect.IOApp
 import cats.effect.{ExitCode, IO}
 import org.typelevel.otel4s.trace.Tracer.Implicits.noop
-import com.anymindgroup.generated.TestBTable
-import com.anymindgroup.generated.TestMaterializedViewTable
-import com.anymindgroup.generated.TestBRow
+import codegentest.generated.TestBTable
+import codegentest.generated.TestMaterializedViewTable
+import codegentest.generated.TestBRow
 import skunk.implicits.*
-import com.anymindgroup.generated.TestTable
-import com.anymindgroup.generated.TestRow
-import com.anymindgroup.generated.TestEnumType
+import codegentest.generated.TestTable
+import codegentest.generated.TestRow
+import codegentest.generated.TestEnumType
 import skunk.util.Typer
 import java.time.OffsetDateTime
 import skunk.*
@@ -22,11 +28,12 @@ import fs2.io.file.Path
 import dumbo.ConnectionConfig
 
 object GeneratedCodeTest extends IOApp {
+  val testDbPort = 5434
 
   override def run(args: List[String]): IO[ExitCode] = migrate >> Session
     .single[IO](
       host = "localhost",
-      port = 5432,
+      port = testDbPort,
       user = "postgres",
       database = "postgres",
       password = Some("postgres"),
@@ -195,18 +202,18 @@ object GeneratedCodeTest extends IOApp {
   private def migrate = Session
     .single[IO](
       host = "localhost",
-      port = 5432,
+      port = testDbPort,
       user = "postgres",
       database = "postgres",
       password = Some("postgres"),
       strategy = Typer.Strategy.BuiltinsOnly,
     )
     .use(_.execute(sql"DROP SCHEMA IF EXISTS public CASCADE".command)) >> dumbo.Dumbo
-    .withFilesIn[IO](Path("modules/core/src/test/resources/db/migration"))
+    .withFilesIn[IO](Path("src/test/resources/db/migration"))
     .apply(
       connection = ConnectionConfig(
         host = "localhost",
-        port = 5432,
+        port = testDbPort,
         user = "postgres",
         database = "postgres",
         password = Some("postgres"),

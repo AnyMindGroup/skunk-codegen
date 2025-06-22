@@ -11,7 +11,6 @@ import scala.scalanative.unsafe.Zone
 
 import roach.codecs.*
 
-import com.anymindgroup.PgCodeGen.Constraint.PrimaryKey
 import java.io.File
 import java.nio.charset.Charset
 import scala.concurrent.duration.*
@@ -25,6 +24,57 @@ import scala.concurrent.ExecutionContext
 import scala.util.Failure
 import scala.util.Success
 import scala.concurrent.Await
+
+@main
+def run(args: String*) =
+  given ExecutionContext = ExecutionContext.global
+
+  val argsMap = args.toList
+    .flatMap(_.split('=').map(_.trim().toLowerCase()))
+    .sliding(2, 2)
+    .collect { case a :: b :: _ => a -> b }
+    .toMap
+
+  (for
+    host           <- argsMap.get("-host").toRight("host not set")
+    user           <- argsMap.get("-user").toRight("user not set")
+    database       <- argsMap.get("-database").toRight("database not set")
+    operateDatabase = argsMap.get("-operate-database")
+    port           <- argsMap.get("-port").flatMap(_.toIntOption).toRight("missing or invalid port")
+    password        = argsMap.get("-password")
+    useDockerImage  = argsMap.get("-use-docker-image")
+    outputDir      <- argsMap.get("-output-dir").map(File(_)).toRight("outputDir not set")
+    pkgName        <- argsMap.get("-pkg-name").toRight("pkgName not set")
+    sourceDir      <- argsMap.get("-source-dir").map(File(_)).toRight("sourceDir not set")
+    excludeTables   = argsMap.get("-exclude-tables").toList.flatMap(_.split(","))
+    scalaVersion    = argsMap.get("-scala-version").getOrElse("3.7.1")
+  yield PgCodeGen(
+    host = host,
+    user = user,
+    database = database,
+    operateDatabase = operateDatabase,
+    port = port,
+    password = password,
+    useDockerImage = useDockerImage,
+    outputDir = outputDir,
+    pkgName = pkgName,
+    sourceDir = sourceDir,
+    excludeTables = excludeTables,
+    scalaVersion = scalaVersion,
+  )) match
+    case Right(codegen) =>
+      Await
+        .ready(codegen.run(true), 30.seconds)
+        .onComplete:
+          case Failure(err) =>
+            Console.err.println(s"Failure: ${err.printStackTrace()}")
+            sys.exit(1)
+          case Success(files) =>
+            println(s"Generated ${files.length} files")
+            sys.exit(0)
+    case Left(err) =>
+      Console.err.println(s"Failure: $err")
+      sys.exit(1)
 
 extension (p: Path) def /(s: String): Path = Paths.get(p.toString(), s)
 
@@ -210,7 +260,7 @@ class PgCodeGen(
 
         val cmd = List(
           """docker run --net="host"""",
-          s"-v ${sourceDir.getPath()}:/migration",
+          s"-v ${sourceDir.getAbsolutePath()}:/migration",
           "rolang/dumbo:latest-alpine",
           s"-user=$user",
           password.map(p => s" -password=$p").getOrElse(""),
@@ -221,13 +271,15 @@ class PgCodeGen(
 
         println(cmd)
 
-        cmd ! (ProcessLogger(out => println(out), err => Console.err.println(err)))
+        cmd ! (ProcessLogger(out => println(out), err => Console.err.println(err))) match
+          case 0       => ()
+          case nonZero => throw Throwable(s"Migration exited with non zero code: $nonZero")
       }
       _                                           = println("Migration complete...")
       enums                                      <- getEnums
       (((columns, indexes), constraints), views) <- getColumns(enums).zip(getIndexes).zip(getConstraints).zip(getViews)
       tables                                      = toTables(columns, indexes, constraints, views)
-      filesToWrite = pkgFiles(tables, enums) ++ tables.flatMap { table =>
+      filesToWrite = pkgFiles(tables, enums) ::: tables.flatMap { table =>
                        rowFileContent(table) match {
                          case None => Nil
                          case Some(rowContent) =>
@@ -356,28 +408,28 @@ class PgCodeGen(
       table.indexes.map(i =>
         s"""val ${toScalaName(i.name)} = Index(name = "${i.name}", createSql = \"\"\"${i.createSql}\"\"\")"""
       )
-    }.mkString("object indexes:\n  ", "\n  ", "\n")
+    }
 
     val constraints = tables.flatMap { table =>
       table.constraints.map(c => s"""val ${toScalaName(c.name)} = Constraint(name = "${c.name}")""")
-    }.mkString("object constraints:\n  ", "\n  ", "\n")
+    }
 
     val arrayCodec =
       s"""|extension [A](arrCodec: skunk.Codec[skunk.data.Arr[A]])
-          |  def _list(implicit factory: scala.collection.Factory[A, List[A]]): skunk.Codec[List[A]] =
+          |  def _list(using factory: scala.collection.Factory[A, List[A]]): skunk.Codec[List[A]] =
           |    arrCodec.imap(arr => arr.flattenTo(factory))(xs => skunk.data.Arr.fromFoldable(xs))""".stripMargin
 
     val pkgLastPart = pkgName.split('.').last
     List(
       (
         pkgDir / "package.scala",
-        s"""|package $pkgName
-            |
-            |$arrayCodec
-            |
-            |$indexes
-            |
-            |$constraints""".stripMargin,
+        List(
+          s"package $pkgName",
+          "",
+          arrayCodec,
+          if indexes.nonEmpty then indexes.mkString("\nobject indexes:\n  ", "\n  ", "\n") else "",
+          if constraints.nonEmpty then constraints.mkString("\nobject constraints:\n  ", "\n  ", "\n") else "",
+        ).mkString("\n"),
       ),
       // (
       //   pkgDir / "Column.scala",
@@ -838,7 +890,7 @@ object PgCodeGen {
     val rowClassName: String       = toRowClassName(name)
     val rowUpdateClassName: String = toRowUpdateClassName(name)
 
-    val primaryUniqueConstraint: Option[UniqueConstraint] = constraints.collectFirst { case c: PrimaryKey =>
+    val primaryUniqueConstraint: Option[UniqueConstraint] = constraints.collectFirst { case c: Constraint.PrimaryKey =>
       c
     }.orElse {
       constraints.collectFirst { case c: Constraint.Unique =>
