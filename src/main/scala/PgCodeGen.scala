@@ -5,25 +5,24 @@
 
 package com.anymindgroup
 
-import roach.*
-import scala.util.Using
+import scala.annotation.tailrec
+import scala.concurrent.Await
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.concurrent.duration.*
 import scala.scalanative.unsafe.Zone
-
-import roach.codecs.*
+import scala.sys.process.*
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Using
 
 import java.io.File
 import java.nio.charset.Charset
-import scala.concurrent.duration.*
-import scala.sys.process.*
-import java.nio.file.Paths
-import java.nio.file.Path
 import java.nio.file.Files
-import scala.concurrent.Future
-import scala.annotation.tailrec
-import scala.concurrent.ExecutionContext
-import scala.util.Failure
-import scala.util.Success
-import scala.concurrent.Await
+import java.nio.file.Path
+import java.nio.file.Paths
+import roach.*
+import roach.codecs.*
 
 @main
 def run(args: String*) =
@@ -36,18 +35,18 @@ def run(args: String*) =
     .toMap
 
   (for
-    host           <- argsMap.get("-host").toRight("host not set")
-    user           <- argsMap.get("-user").toRight("user not set")
-    database       <- argsMap.get("-database").toRight("database not set")
+    host <- argsMap.get("-host").toRight("host not set")
+    user <- argsMap.get("-user").toRight("user not set")
+    database <- argsMap.get("-database").toRight("database not set")
     operateDatabase = argsMap.get("-operate-database")
-    port           <- argsMap.get("-port").flatMap(_.toIntOption).toRight("missing or invalid port")
-    password        = argsMap.get("-password")
-    useDockerImage  = argsMap.get("-use-docker-image")
-    outputDir      <- argsMap.get("-output-dir").map(File(_)).toRight("outputDir not set")
-    pkgName        <- argsMap.get("-pkg-name").toRight("pkgName not set")
-    sourceDir      <- argsMap.get("-source-dir").map(File(_)).toRight("sourceDir not set")
-    excludeTables   = argsMap.get("-exclude-tables").toList.flatMap(_.split(","))
-    scalaVersion    = argsMap.get("-scala-version").getOrElse("3.7.1")
+    port <- argsMap.get("-port").flatMap(_.toIntOption).toRight("missing or invalid port")
+    password = argsMap.get("-password")
+    useDockerImage = argsMap.get("-use-docker-image")
+    outputDir <- argsMap.get("-output-dir").map(File(_)).toRight("outputDir not set")
+    pkgName <- argsMap.get("-pkg-name").toRight("pkgName not set")
+    sourceDir <- argsMap.get("-source-dir").map(File(_)).toRight("sourceDir not set")
+    excludeTables = argsMap.get("-exclude-tables").toList.flatMap(_.split(","))
+    scalaVersion = argsMap.get("-scala-version").getOrElse("3.7.1")
   yield PgCodeGen(
     host = host,
     user = user,
@@ -60,7 +59,7 @@ def run(args: String*) =
     pkgName = pkgName,
     sourceDir = sourceDir,
     excludeTables = excludeTables,
-    scalaVersion = scalaVersion,
+    scalaVersion = scalaVersion
   )) match
     case Right(codegen) =>
       Await
@@ -81,23 +80,23 @@ extension (p: Path) def /(s: String): Path = Paths.get(p.toString(), s)
 case class Type(name: String, componentTypes: List[Type] = Nil)
 
 class PgCodeGen(
-  host: String,
-  user: String,
-  database: String,
-  operateDatabase: Option[String],
-  port: Int,
-  password: Option[String],
-  useDockerImage: Option[String],
-  outputDir: File,
-  pkgName: String,
-  sourceDir: File,
-  excludeTables: List[String],
-  scalaVersion: String,
+    host: String,
+    user: String,
+    database: String,
+    operateDatabase: Option[String],
+    port: Int,
+    password: Option[String],
+    useDockerImage: Option[String],
+    outputDir: File,
+    pkgName: String,
+    sourceDir: File,
+    excludeTables: List[String],
+    scalaVersion: String
 )(using ExecutionContext) {
   import PgCodeGen.*
 
-  private val connectionString       = s"postgresql://$user${password.map(p => s":$p").getOrElse("")}@$host:$port/$database"
-  private val pkgDir                 = Paths.get(outputDir.getPath(), pkgName.replace('.', File.separatorChar))
+  private val connectionString = s"postgresql://$user${password.map(p => s":$p").getOrElse("")}@$host:$port/$database"
+  private val pkgDir = Paths.get(outputDir.getPath(), pkgName.replace('.', File.separatorChar))
   private val schemaHistoryTableName = "dumbo_history"
 
   private def getConstraints =
@@ -111,35 +110,36 @@ class PgCodeGen(
 
       q.map { (a, b, c, d, e, f) =>
         ConstraintRow(tableName = a, name = b, typ = c, refCol = d, refTable = e, fromCol = f)
-      }.groupBy(_.tableName).map { case (tName, constraints) =>
-        (
-          tName,
-          constraints.groupBy(c => (c.name, c.typ)).toVector.map {
-            case ((cName, "PRIMARY KEY"), cItems) =>
-              Constraint.PrimaryKey(name = cName, columnNames = cItems.map(_.fromCol))
-            case ((cName, "UNIQUE"), cItems) => Constraint.Unique(name = cName, columnNames = cItems.map(_.fromCol))
-            case ((cName, "FOREIGN KEY"), cItems) =>
-              Constraint.ForeignKey(
-                name = cName,
-                refs = cItems.map { cr =>
-                  ColumnRef(fromColName = cr.fromCol, toColName = cr.refCol, toTableName = cr.refTable)
-                },
-              )
-            case ((cName, _), _) => Constraint.Unknown(cName)
-          },
-        )
-      }
+      }.groupBy(_.tableName)
+        .map { case (tName, constraints) =>
+          (
+            tName,
+            constraints.groupBy(c => (c.name, c.typ)).toVector.map {
+              case ((cName, "PRIMARY KEY"), cItems) =>
+                Constraint.PrimaryKey(name = cName, columnNames = cItems.map(_.fromCol))
+              case ((cName, "UNIQUE"), cItems) => Constraint.Unique(name = cName, columnNames = cItems.map(_.fromCol))
+              case ((cName, "FOREIGN KEY"), cItems) =>
+                Constraint.ForeignKey(
+                  name = cName,
+                  refs = cItems.map { cr =>
+                    ColumnRef(fromColName = cr.fromCol, toColName = cr.refCol, toTableName = cr.refTable)
+                  }
+                )
+              case ((cName, _), _) => Constraint.Unknown(cName)
+            }
+          )
+        }
 
   private def toType(
-    udt: String,
-    maxCharLength: Option[Int],
-    numPrecision: Option[Int],
-    numScale: Option[Int],
+      udt: String,
+      maxCharLength: Option[Int],
+      numPrecision: Option[Int],
+      numScale: Option[Int]
   ): Type =
     (udt, maxCharLength, numPrecision, numScale) match {
       case (u @ ("bpchar" | "varchar"), Some(l), _, _) => Type(s"$u($l)")
       case ("numeric", _, Some(p), Some(s))            => Type(s"numeric($p${if (s > 0) ", " + s.toString else ""})")
-      case _ =>
+      case _                                           =>
         val componentTypes = if (udt.startsWith("_")) List(Type(udt.stripPrefix("_"))) else Nil
         Type(udt, componentTypes)
     }
@@ -189,7 +189,7 @@ class PgCodeGen(
           toType(udt, maxCharLength, numPrecision, numScale),
           nullable == "YES",
           default.flatMap(ColumnDefault.fromString),
-          is_generated == "ALWAYS",
+          is_generated == "ALWAYS"
         )
       }.map { (tName, colName, udt, isNullable, default, isAlwaysGenerated) =>
         toScalaType(udt, isNullable, enums).map { st =>
@@ -202,14 +202,15 @@ class PgCodeGen(
               scalaType = st,
               isNullable = isNullable,
               default = default,
-              isAlwaysGenerated = isAlwaysGenerated,
-            ),
+              isAlwaysGenerated = isAlwaysGenerated
+            )
           )
         } match {
           case Left(err)    => throw Throwable(err)
           case Right(value) => value
         }
-      }.groupBy(_._1).map { case (k, v) => (k, v.map(_._2)) }
+      }.groupBy(_._1)
+        .map { case (k, v) => (k, v.map(_._2)) }
   end getColumns
 
   private def getIndexes =
@@ -219,7 +220,8 @@ class PgCodeGen(
 
       q.map { (name, indexDef, tableName) =>
         (tableName, Index(name, indexDef))
-      }.groupBy(_._1).map((tName, v) => (tName, v.map(_._2)))
+      }.groupBy(_._1)
+        .map((tName, v) => (tName, v.map(_._2)))
 
   private def getEnums =
     pgSessionRun:
@@ -266,7 +268,7 @@ class PgCodeGen(
           password.map(p => s" -password=$p").getOrElse(""),
           s"-url=postgresql://$host:$port/$database",
           "-location=/migration",
-          "migrate",
+          "migrate"
         ).mkString(" ")
 
         println(cmd)
@@ -275,29 +277,29 @@ class PgCodeGen(
           case 0       => ()
           case nonZero => throw Throwable(s"Migration exited with non zero code: $nonZero")
       }
-      _                                           = println("Migration complete...")
-      enums                                      <- getEnums
+      _ = println("Migration complete...")
+      enums <- getEnums
       (((columns, indexes), constraints), views) <- getColumns(enums).zip(getIndexes).zip(getConstraints).zip(getViews)
-      tables                                      = toTables(columns, indexes, constraints, views)
+      tables = toTables(columns, indexes, constraints, views)
       filesToWrite = pkgFiles(tables, enums) ::: tables.flatMap { table =>
-                       rowFileContent(table) match {
-                         case None => Nil
-                         case Some(rowContent) =>
-                           List(
-                             pkgDir / s"${table.tableClassName}.scala" -> tableFileContent(table),
-                             pkgDir / s"${table.rowClassName}.scala"   -> rowContent,
-                           )
-                       }
-                     }
+        rowFileContent(table) match {
+          case None             => Nil
+          case Some(rowContent) =>
+            List(
+              pkgDir / s"${table.tableClassName}.scala" -> tableFileContent(table),
+              pkgDir / s"${table.rowClassName}.scala" -> rowContent
+            )
+        }
+      }
       _ <- Future {
-             Files.deleteIfExists(pkgDir)
-             Files.createDirectories(pkgDir)
-           }
+        Files.deleteIfExists(pkgDir)
+        Files.createDirectories(pkgDir)
+      }
       files <- Future.traverse(filesToWrite): (path, content) =>
-                 Future:
-                   Files.writeString(path, content)
-                   println(s"Created ${path.toString()}")
-                   File(path.toString())
+        Future:
+          Files.writeString(path, content)
+          println(s"Created ${path.toString()}")
+          File(path.toString())
     yield files
   end generatorTask
 
@@ -326,7 +328,7 @@ class PgCodeGen(
 
   private def startDocker =
     useDockerImage match {
-      case None => Future.unit
+      case None        => Future.unit
       case Some(image) =>
         Future {
           val pw = password.fold("")(p => s" -e POSTGRES_PASSWORD=$p")
@@ -339,10 +341,10 @@ class PgCodeGen(
   } else Future.unit
 
   private def toTables(
-    columns: TableMap[Column],
-    indexes: TableMap[Index],
-    constraints: TableMap[Constraint],
-    views: Set[TableName],
+      columns: TableMap[Column],
+      indexes: TableMap[Index],
+      constraints: TableMap[Constraint],
+      views: Set[TableName]
   ): List[Table] = {
 
     def findAutoIncColumns(tableName: TableName) =
@@ -360,7 +362,7 @@ class PgCodeGen(
 
     columns.toList.map { case (tname, tableCols) =>
       val tableConstraints = constraints.getOrElse(tname, Vector.empty)
-      val generatedCols    = findAutoIncColumns(tname) ++ tableCols.filter(_.isAlwaysGenerated)
+      val generatedCols = findAutoIncColumns(tname) ++ tableCols.filter(_.isAlwaysGenerated)
       val autoIncFk = tableConstraints.collect { case c: Constraint.ForeignKey => c }.flatMap {
         _.refs.flatMap { ref =>
           tableCols.find(c => c.columnName == ref.fromColName).filter { _ =>
@@ -376,7 +378,7 @@ class PgCodeGen(
         constraints = tableConstraints.toList,
         indexes = indexes.getOrElse(tname, Vector.empty).toList,
         autoIncFk = autoIncFk.toList,
-        isView = views.contains(tname),
+        isView = views.contains(tname)
       )
     }
   }
@@ -399,7 +401,7 @@ class PgCodeGen(
             |      a => a.value,
             |      s =>${e.scalaName}.values.find(_.value == s).toRight(s"Invalid ${e.name} type: $$s"),
             |      Type("${e.name}"),
-            |    )""".stripMargin,
+            |    )""".stripMargin
       )
     }
 
@@ -428,8 +430,8 @@ class PgCodeGen(
           "",
           arrayCodec,
           if indexes.nonEmpty then indexes.mkString("\nobject indexes:\n  ", "\n  ", "\n") else "",
-          if constraints.nonEmpty then constraints.mkString("\nobject constraints:\n  ", "\n  ", "\n") else "",
-        ).mkString("\n"),
+          if constraints.nonEmpty then constraints.mkString("\nobject constraints:\n  ", "\n  ", "\n") else ""
+        ).mkString("\n")
       ),
       // (
       //   pkgDir / "Column.scala",
@@ -446,14 +448,14 @@ class PgCodeGen(
         s"""|package $pkgName
             |
             |final case class Index(name: String, createSql: String)
-           """.stripMargin,
+           """.stripMargin
       ),
       (
         pkgDir / "Constraint.scala",
         s"""|package $pkgName
             |
             |final case class Constraint(name: String)
-           """.stripMargin,
+           """.stripMargin
       ),
       (
         pkgDir / "Cols.scala",
@@ -478,8 +480,8 @@ class PgCodeGen(
             |
             |  def ~[B] (that: AppliedCol[B]): AppliedCol[(A, B)] = AppliedCol(this.cols ~ that.cols, (this.value, that.value))
             |}
-            |""".stripMargin,
-      ),
+            |""".stripMargin
+      )
     ) ++ scalaEnums(enums)
   }
 
@@ -487,21 +489,21 @@ class PgCodeGen(
     t.componentTypes match {
       case Nil =>
         Map[String, List[String]](
-          "Boolean"                  -> List("bool"),
-          "String"                   -> List("text", "varchar", "bpchar", "name"),
-          "java.util.UUID"           -> List("uuid"),
-          "Short"                    -> List("int2"),
-          "Int"                      -> List("int4"),
-          "Long"                     -> List("int8"),
-          "BigDecimal"               -> List("numeric"),
-          "Float"                    -> List("float4"),
-          "Double"                   -> List("float8"),
-          "java.time.LocalDate"      -> List("date"),
-          "java.time.LocalTime"      -> List("time"),
-          "java.time.OffsetTime"     -> List("timetz"),
-          "java.time.LocalDateTime"  -> List("timestamp"),
+          "Boolean" -> List("bool"),
+          "String" -> List("text", "varchar", "bpchar", "name"),
+          "java.util.UUID" -> List("uuid"),
+          "Short" -> List("int2"),
+          "Int" -> List("int4"),
+          "Long" -> List("int8"),
+          "BigDecimal" -> List("numeric"),
+          "Float" -> List("float4"),
+          "Double" -> List("float8"),
+          "java.time.LocalDate" -> List("date"),
+          "java.time.LocalTime" -> List("time"),
+          "java.time.OffsetTime" -> List("timetz"),
+          "java.time.LocalDateTime" -> List("timestamp"),
           "java.time.OffsetDateTime" -> List("timestamptz"),
-          "java.time.Duration"       -> List("interval"),
+          "java.time.Duration" -> List("interval")
         ).collectFirst {
           // check by type name without a max length parameter if set, e.g. vacrhar instead of varchar(3)
           case (scalaType, pgTypes) if pgTypes.contains(t.name.takeWhile(_ != '(')) =>
@@ -543,9 +545,9 @@ class PgCodeGen(
         primaryUniqueConstraint match {
           case Some(cstr) =>
             columns.filterNot(cstr.containsColumn).toList match {
-              case Nil => (Nil, Nil)
+              case Nil        => (Nil, Nil)
               case updateCols =>
-                val colsData     = toUpdateClassPropsStr(updateCols)
+                val colsData = toUpdateClassPropsStr(updateCols)
                 val fragmentData = toUpdateFragment(updateCols)
                 (
                   updateCols,
@@ -555,8 +557,8 @@ class PgCodeGen(
                     s"$colsData",
                     ") {",
                     fragmentData,
-                    "}",
-                  ),
+                    "}"
+                  )
                 )
             }
 
@@ -570,7 +572,7 @@ class PgCodeGen(
 
     def withUpdateStr = rowUpdateClassData match {
       case (Nil, Nil) => ""
-      case (cols, _) =>
+      case (cols, _)  =>
         val updateProps = cols.map(_.scalaName).map(n => s"$n = Some($n)").mkString("    ", ",\n    ", "")
         List(
           " {",
@@ -581,12 +583,12 @@ class PgCodeGen(
           s"  def withUpdateAll: ($rowClassName, AppliedFragment) = (this, asUpdate.fragment)",
           s"  def withUpdate(f: $rowUpdateClassName => $rowUpdateClassName): ($rowClassName, AppliedFragment) = (this, f(asUpdate).fragment)",
           "",
-          "}",
+          "}"
         ).mkString("\n")
     }
 
     columns.headOption.map { _ =>
-      val colsData  = toClassPropsStr(columns)
+      val colsData = toClassPropsStr(columns)
       val codecData = toCodecFieldsStr(columns)
       List(
         s"package $pkgName",
@@ -601,7 +603,7 @@ class PgCodeGen(
         s"object $rowClassName {",
         s"  implicit val codec: Codec[$rowClassName] = ($codecData).to[$rowClassName]",
         "}",
-        s"${rowUpdateClassData._2.mkString("\n")}",
+        s"${rowUpdateClassData._2.mkString("\n")}"
       ).mkString("\n")
     }
   }
@@ -613,7 +615,7 @@ class PgCodeGen(
         s"package $pkgName\n",
         "import skunk.*",
         "import skunk.implicits.*",
-        "import cats.data.NonEmptyList",
+        "import cats.data.NonEmptyList"
       ) :::
         List(
           "",
@@ -629,7 +631,7 @@ class PgCodeGen(
           selectAllStatement(table),
           "}",
           "",
-          s"""object ${table.tableClassName} extends ${table.tableClassName}("${table.name}")""",
+          s"""object ${table.tableClassName} extends ${table.tableClassName}("${table.name}")"""
         )
     ).mkString("\n")
   }
@@ -640,7 +642,7 @@ class PgCodeGen(
     if (autoIncFk.isEmpty) {
       (rowClassName, s"${rowClassName}.codec")
     } else {
-      val autoIncFkCodecs     = autoIncFk.map(_.codecName).mkString(" *: ")
+      val autoIncFkCodecs = autoIncFk.map(_.codecName).mkString(" *: ")
       val autoIncFkScalaTypes = autoIncFk.map(_.scalaType).mkString(" *: ")
       (s"($autoIncFkScalaTypes ~ $rowClassName)", s"$autoIncFkCodecs ~ ${rowClassName}.codec")
     }
@@ -651,8 +653,8 @@ class PgCodeGen(
     else {
       import table.*
 
-      val allCols                        = autoIncFk ++ columns
-      val allColNames                    = allCols.map(_.columnName).mkString(",")
+      val allCols = autoIncFk ++ columns
+      val allColNames = allCols.map(_.columnName).mkString(",")
       val (insertScalaType, insertCodec) = queryTypesStr(table)
 
       val returningStatement = generatedColumns match {
@@ -705,7 +707,7 @@ class PgCodeGen(
       List(
         upsertQ.getOrElse(""),
         insertQ,
-        insertCol,
+        insertCol
       ).mkString("\n\n")
     }
 
@@ -733,8 +735,8 @@ class PgCodeGen(
     import table.*
 
     val generatedColStm = if (generatedColumns.nonEmpty) {
-      val types       = generatedColumns.map(_.codecName).mkString(" *: ")
-      val sTypes      = generatedColumns.map(_.scalaType).mkString(" *: ")
+      val types = generatedColumns.map(_.codecName).mkString(" *: ")
+      val sTypes = generatedColumns.map(_.scalaType).mkString(" *: ")
       val colNamesStr = (generatedColumns ++ columns).map(_.columnName).mkString(", ")
 
       s"""
@@ -746,7 +748,7 @@ class PgCodeGen(
       ""
     }
 
-    val colNamesStr                   = (autoIncFk ++ columns).map(_.columnName).mkString(",")
+    val colNamesStr = (autoIncFk ++ columns).map(_.columnName).mkString(",")
     val (queryReturnType, queryCodec) = queryTypesStr(table)
 
     val defaultStm = s"""
@@ -765,7 +767,7 @@ class PgCodeGen(
     modified.sorted(using Ordering[Long].reverse).headOption
 
   private def outputFilesOutdated(
-    sourcesModified: List[Long]
+      sourcesModified: List[Long]
   ): (outPaths: List[File], outdated: Boolean) =
     val out =
       if Files.exists(pkgDir) then
@@ -789,38 +791,41 @@ class PgCodeGen(
         UnsupportedOperationException(s"Scala version smaller than 3 is not supported. Used version: $scalaVersion")
       )
     else
-      listMigrationFiles.map { sourceFiles =>
-        println(s"Found ${sourceFiles.length} source files")
-        (
-          sourceFiles,
-          outputFilesOutdated(sourceFiles.map(_.lastModified())),
-          Files.exists(pkgDir),
-        )
-      }.flatMap { case (sourceFiles, (outPaths, isOutdated), pkgDirExists) =>
-        if ((forceRegeneration || (!pkgDirExists || isOutdated))) {
-          (for {
-            _ <- if sourceFiles.isEmpty then
-                   Future.failed(Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
-                 else Future.unit
-            _  = if !pkgDirExists then println("Generated source not found")
-            _  = if pkgDirExists && isOutdated then println("Generated source is outdated")
-            _  = println("Generating Postgres models")
-            _ <- rmDocker
-            _ <- startDocker
-            files <- generatorTask.transformWith:
-                       case Success(files) => rmDocker.map(_ => files)
-                       case Failure(err)   => rmDocker.flatMap(_ => Future.failed(err))
-          } yield files)
-        } else Future.successful(outPaths)
-      }
+      listMigrationFiles
+        .map { sourceFiles =>
+          println(s"Found ${sourceFiles.length} source files")
+          (
+            sourceFiles,
+            outputFilesOutdated(sourceFiles.map(_.lastModified())),
+            Files.exists(pkgDir)
+          )
+        }
+        .flatMap { case (sourceFiles, (outPaths, isOutdated), pkgDirExists) =>
+          if ((forceRegeneration || (!pkgDirExists || isOutdated))) {
+            (for {
+              _ <-
+                if sourceFiles.isEmpty then
+                  Future.failed(Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
+                else Future.unit
+              _ = if !pkgDirExists then println("Generated source not found")
+              _ = if pkgDirExists && isOutdated then println("Generated source is outdated")
+              _ = println("Generating Postgres models")
+              _ <- rmDocker
+              _ <- startDocker
+              files <- generatorTask.transformWith:
+                case Success(files) => rmDocker.map(_ => files)
+                case Failure(err)   => rmDocker.flatMap(_ => Future.failed(err))
+            } yield files)
+          } else Future.successful(outPaths)
+        }
 }
 
 object PgCodeGen {
-  type TableName   = String
+  type TableName = String
   type TableMap[T] = Map[TableName, Vector[T]]
-  type Enums       = Vector[Enum]
-  type ScalaType   = String
-  type Result[T]   = Either[String, T]
+  type Enums = Vector[Enum]
+  type ScalaType = String
+  type Result[T] = Either[String, T]
 
   final case class Enum(name: String, values: Vector[EnumValue]) {
     val scalaName: String = toScalaName(name).capitalize
@@ -830,15 +835,15 @@ object PgCodeGen {
   }
 
   final case class Column(
-    columnName: String,
-    scalaType: ScalaType,
-    pgType: Type,
-    isEnum: Boolean,
-    isNullable: Boolean,
-    default: Option[ColumnDefault],
-    isAlwaysGenerated: Boolean,
+      columnName: String,
+      scalaType: ScalaType,
+      pgType: Type,
+      isEnum: Boolean,
+      isNullable: Boolean,
+      default: Option[ColumnDefault],
+      isAlwaysGenerated: Boolean
   ) {
-    val scalaName: String          = toScalaName(columnName)
+    val scalaName: String = toScalaName(columnName)
     val snakeCaseScalaName: String = escapeScalaKeywords(columnName)
 
     def isArr = pgType.componentTypes.nonEmpty
@@ -870,44 +875,46 @@ object PgCodeGen {
   }
   object Constraint {
     final case class PrimaryKey(name: String, columnNames: Vector[String]) extends UniqueConstraint
-    final case class Unique(name: String, columnNames: Vector[String])     extends UniqueConstraint
-    final case class ForeignKey(name: String, refs: Vector[ColumnRef])     extends Constraint
-    final case class Unknown(name: String)                                 extends Constraint
+    final case class Unique(name: String, columnNames: Vector[String]) extends UniqueConstraint
+    final case class ForeignKey(name: String, refs: Vector[ColumnRef]) extends Constraint
+    final case class Unknown(name: String) extends Constraint
   }
 
   final case class Index(name: String, createSql: String)
 
   final case class Table(
-    name: String,
-    columns: List[Column],
-    generatedColumns: List[Column],
-    constraints: List[Constraint],
-    indexes: List[Index],
-    autoIncFk: List[Column],
-    isView: Boolean,
+      name: String,
+      columns: List[Column],
+      generatedColumns: List[Column],
+      constraints: List[Constraint],
+      indexes: List[Index],
+      autoIncFk: List[Column],
+      isView: Boolean
   ) {
-    val tableClassName: String     = toTableClassName(name)
-    val rowClassName: String       = toRowClassName(name)
+    val tableClassName: String = toTableClassName(name)
+    val rowClassName: String = toRowClassName(name)
     val rowUpdateClassName: String = toRowUpdateClassName(name)
 
-    val primaryUniqueConstraint: Option[UniqueConstraint] = constraints.collectFirst { case c: Constraint.PrimaryKey =>
-      c
-    }.orElse {
-      constraints.collectFirst { case c: Constraint.Unique =>
+    val primaryUniqueConstraint: Option[UniqueConstraint] = constraints
+      .collectFirst { case c: Constraint.PrimaryKey =>
         c
       }
-    }
+      .orElse {
+        constraints.collectFirst { case c: Constraint.Unique =>
+          c
+        }
+      }
 
     def isInPrimaryConstraint(c: Column): Boolean = primaryUniqueConstraint.exists(_.containsColumn(c))
   }
 
   final case class ConstraintRow(
-    tableName: String,
-    name: String,
-    typ: String,
-    refCol: String,
-    refTable: String,
-    fromCol: String,
+      tableName: String,
+      name: String,
+      typ: String,
+      refCol: String,
+      refTable: String,
+      fromCol: String
   )
 
   def toScalaName(s: String): String =
