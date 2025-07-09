@@ -15,6 +15,6 @@ target/
 .vscode/
 .bloop/
 metals.sbt
-src/test/scala/codegentest/generated
+test-generated
 .scala-build/
 .bin

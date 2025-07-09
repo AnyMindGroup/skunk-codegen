@@ -13,10 +13,12 @@ import scala.concurrent.duration.*
 import scala.scalanative.unsafe.Zone
 import scala.sys.process.*
 import scala.util.Failure
+import scala.util.Random
 import scala.util.Success
 import scala.util.Using
 
 import java.io.File
+import java.net.ServerSocket
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
@@ -35,25 +37,13 @@ def run(args: String*) =
     .toMap
 
   (for
-    host <- argsMap.get("-host").toRight("host not set")
-    user <- argsMap.get("-user").toRight("user not set")
-    database <- argsMap.get("-database").toRight("database not set")
-    operateDatabase = argsMap.get("-operate-database")
-    port <- argsMap.get("-port").flatMap(_.toIntOption).toRight("missing or invalid port")
-    password = argsMap.get("-password")
-    useDockerImage = argsMap.get("-use-docker-image")
     outputDir <- argsMap.get("-output-dir").map(File(_)).toRight("outputDir not set")
     pkgName <- argsMap.get("-pkg-name").toRight("pkgName not set")
     sourceDir <- argsMap.get("-source-dir").map(File(_)).toRight("sourceDir not set")
+    useDockerImage = argsMap.get("-use-docker-image").getOrElse("postgres:17-alpine")
     excludeTables = argsMap.get("-exclude-tables").toList.flatMap(_.split(","))
     scalaVersion = argsMap.get("-scala-version").getOrElse("3.7.1")
   yield PgCodeGen(
-    host = host,
-    user = user,
-    database = database,
-    operateDatabase = operateDatabase,
-    port = port,
-    password = password,
     useDockerImage = useDockerImage,
     outputDir = outputDir,
     pkgName = pkgName,
@@ -80,13 +70,7 @@ extension (p: Path) def /(s: String): Path = Paths.get(p.toString(), s)
 case class Type(name: String, componentTypes: List[Type] = Nil)
 
 class PgCodeGen(
-    host: String,
-    user: String,
-    database: String,
-    operateDatabase: Option[String],
-    port: Int,
-    password: Option[String],
-    useDockerImage: Option[String],
+    useDockerImage: String,
     outputDir: File,
     pkgName: String,
     sourceDir: File,
@@ -95,7 +79,12 @@ class PgCodeGen(
 )(using ExecutionContext) {
   import PgCodeGen.*
 
-  private val connectionString = s"postgresql://$user${password.map(p => s":$p").getOrElse("")}@$host:$port/$database"
+  private val host = "localhost"
+  private val user = "postgres"
+  private val port = findFreePort()
+  private val password = "postgres"
+  private val databaseName = s"codegen_db_${Random.alphanumeric.take(10).mkString}"
+  private val connectionString = s"postgresql://$user:$password@$host:$port/$databaseName"
   private val pkgDir = Paths.get(outputDir.getPath(), pkgName.replace('.', File.separatorChar))
   private val schemaHistoryTableName = "dumbo_history"
 
@@ -245,28 +234,17 @@ class PgCodeGen(
 
   private def generatorTask =
     for
-      // _ <- pgSessionRun {
-      //        operateDatabase match {
-      //          case Some(opDBName) =>
-      //            val result = sql"SELECT true FROM pg_database WHERE datname = ${varchar}".one(opDBName, bool)
-      //            if result.contains(true) then () else sql"CREATE DATABASE #${opDBName}".exec()
-      //          case None => ()
-      //        }
-
-      //        sql"DROP SCHEMA public CASCADE".exec()
-      //        sql"CREATE SCHEMA public".exec()
-      //      }
-      _ <- Future(println("Running migration..."))
-      _ = {
-        // println(s"Run migration with sql in ${sourceDir.getPath()}")
+      _ <- Future {
+        println("Running migration...")
 
         val cmd = List(
-          """docker run --net="host"""",
+          """docker run --rm --net="host"""",
           s"-v ${sourceDir.getAbsolutePath()}:/migration",
           "rolang/dumbo:latest-alpine",
           s"-user=$user",
-          password.map(p => s" -password=$p").getOrElse(""),
-          s"-url=postgresql://$host:$port/$database",
+          s"-password=$password",
+          s"-url=postgresql://$host:$port/$databaseName",
+          s"-table=$schemaHistoryTableName",
           "-location=/migration",
           "migrate"
         ).mkString(" ")
@@ -277,10 +255,13 @@ class PgCodeGen(
           case 0       => ()
           case nonZero => throw Throwable(s"Migration exited with non zero code: $nonZero")
       }
-      _ = println("Migration complete...")
       enums <- getEnums
-      (((columns, indexes), constraints), views) <- getColumns(enums).zip(getIndexes).zip(getConstraints).zip(getViews)
-      tables = toTables(columns, indexes, constraints, views)
+      tables <- getColumns(enums)
+        .zip(getIndexes)
+        .zip(getConstraints)
+        .zip(getViews)
+        .map:
+          case (((columns, indexes), constraints), views) => toTables(columns, indexes, constraints, views)
       filesToWrite = pkgFiles(tables, enums) ::: tables.flatMap { table =>
         rowFileContent(table) match {
           case None             => Nil
@@ -303,38 +284,52 @@ class PgCodeGen(
     yield files
   end generatorTask
 
-  private val pgServiceName = pkgName.replace('.', '-')
+  private val pgServiceName = s"codegen_${pkgName.replace('.', '-')}_${Random.alphanumeric.take(10).mkString}"
 
-  private def awaitReadiness: Future[Unit] =
-    @tailrec
-    def check(attempt: Int): Boolean =
-      Thread.sleep(500)
-      try {
-        Zone:
-          Pool.single(connectionString): pool =>
-            pool.withLease:
-              val res = sql"SELECT true".one(bool).contains(true)
-              println(s"Postgres docker is running: $res")
-              res
-      } catch {
-        case e: Throwable =>
-          if attempt <= 10 then check(attempt + 1)
-          else
-            println(s"Could not connect to docker on $host:$port ${e.getMessage()}")
-            throw e
-      }
-
-    Future(check(0))
-
-  private def startDocker =
-    useDockerImage match {
-      case None        => Future.unit
-      case Some(image) =>
-        Future {
-          val pw = password.fold("")(p => s" -e POSTGRES_PASSWORD=$p")
-          s"docker run -p $port:5432 -h $host -e POSTGRES_USER=$user$pw --name $pgServiceName -d $image".!!
-        }.flatMap(_ => awaitReadiness)
+  @tailrec
+  private def findFreePort(fromPort: Int = 5432): Int = {
+    try {
+      val socket = new ServerSocket(fromPort)
+      val port = socket.getLocalPort
+      println(s"Found free port: $port")
+      socket.close()
+      port
+    } catch {
+      case e: Throwable =>
+        println(s"Port $fromPort not available: $e")
+        // socket. socket.close()
+        findFreePort(fromPort + 1)
     }
+  }
+
+  private def initGeneratorDatabase =
+    def awaitReadiness: Future[Unit] =
+      @tailrec
+      def check(attempt: Int): Boolean =
+        Thread.sleep(500)
+        try {
+          Zone:
+            Pool.single(connectionString): pool =>
+              pool.withLease:
+                val res = sql"SELECT true".one(bool).contains(true)
+                println(s"Postgres docker is running: $res")
+                res
+        } catch {
+          case e: Throwable =>
+            if attempt <= 10 then check(attempt + 1)
+            else
+              println(s"Could not connect to docker on $host:$port ${e.getMessage()}")
+              throw e
+        }
+
+      Future(check(0))
+
+    for
+      _ <- Future:
+        s"docker run -p $port:5432 -h $host -e POSTGRES_USER=$user -e POSTGRES_PASSWORD=$password -e POSTGRES_DB=$databaseName --name $pgServiceName -d $useDockerImage".!!
+      _ <- awaitReadiness
+    yield ()
+  end initGeneratorDatabase
 
   private def rmDocker = if (useDockerImage.nonEmpty) {
     Future(s"docker rm -f $pgServiceName" ! ProcessLogger(_ => ()))
@@ -800,24 +795,24 @@ class PgCodeGen(
             Files.exists(pkgDir)
           )
         }
-        .flatMap { case (sourceFiles, (outPaths, isOutdated), pkgDirExists) =>
-          if ((forceRegeneration || (!pkgDirExists || isOutdated))) {
-            (for {
-              _ <-
-                if sourceFiles.isEmpty then
-                  Future.failed(Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
-                else Future.unit
-              _ = if !pkgDirExists then println("Generated source not found")
-              _ = if pkgDirExists && isOutdated then println("Generated source is outdated")
-              _ = println("Generating Postgres models")
-              _ <- rmDocker
-              _ <- startDocker
-              files <- generatorTask.transformWith:
-                case Success(files) => rmDocker.map(_ => files)
-                case Failure(err)   => rmDocker.flatMap(_ => Future.failed(err))
-            } yield files)
-          } else Future.successful(outPaths)
-        }
+        .flatMap:
+          case (sourceFiles, (outFiles, isOutdated), pkgDirExists) =>
+            if forceRegeneration || (!pkgDirExists || isOutdated) then
+              for
+                _ <-
+                  if sourceFiles.isEmpty then
+                    Future.failed(Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
+                  else Future.unit
+                _ = if !pkgDirExists then println("Generated source not found")
+                _ = if pkgDirExists && isOutdated then println("Generated source is outdated")
+                _ = println("Generating Postgres models")
+                _ <- rmDocker
+                _ <- initGeneratorDatabase
+                files <- generatorTask.transformWith:
+                  case Success(files) => rmDocker.map(_ => files)
+                  case Failure(err)   => rmDocker.flatMap(_ => Future.failed(err))
+              yield files
+            else Future.successful(outFiles)
 }
 
 object PgCodeGen {

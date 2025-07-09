@@ -1,24 +1,18 @@
 #!/usr/bin/env bash
 set -e
 
-rm -rf src/test/scala/codegentest
+rm -rf test-generated
 
 scala-cli --power package \
   --native \
-  --native-mode debug src/main/scala \
+  --native-mode release-fast PgCodeGen.scala \
   -o .bin/codegen -f
 
 ./.bin/codegen \
-  -host=localhost \
-  -user=postgres \
-  -database=postgres \
-  -operate-database=postgres \
-  -port=5432 \
-  -password=postgres \
   -use-docker-image="postgres:17-alpine" \
-  -output-dir=src/test/scala \
-  -pkg-name=codegentest.generated \
-  -exclude-tables=unsupported_yet,flyway_schema_history \
-  -source-dir=src/test/resources/db/migration
+  -output-dir=test-generated \
+  -pkg-name=generated \
+  -exclude-tables=unsupported_yet \
+  -source-dir=test-migrations
 
-scala-cli run src/test/scala/GeneratedCodeTest.scala
+scala-cli run PgCodeGenTest.scala
