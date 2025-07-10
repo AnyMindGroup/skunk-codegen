@@ -47,7 +47,7 @@ jobs:
   publish-bin:
     name: Publish command line binaries
     needs: [build]
-    # if: github.ref == 'refs/heads/make-code-generator-sbt-independent'
+    if: startsWith(github.ref, 'refs/tags/')
     strategy:
       matrix:
         os: [ubuntu-latest]
