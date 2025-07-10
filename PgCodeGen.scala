@@ -1,5 +1,6 @@
 //> using scala 3.7.1
 //> using dep com.indoorvivants.roach::core::0.1.0
+//> using dep com.github.lolgab::scala-native-crypto::0.2.1
 //> using platform native
 //> using nativeVersion 0.5.8
 
@@ -8,6 +9,7 @@ package com.anymindgroup
 import scala.annotation.tailrec
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 import scala.scalanative.unsafe.Zone
 import scala.sys.process.*
 import scala.util.{Failure, Random, Success, Using}
@@ -16,6 +18,7 @@ import java.io.File
 import java.net.ServerSocket
 import java.nio.charset.Charset
 import java.nio.file.{Files, Path, Paths}
+import java.security.MessageDigest
 
 import roach.*
 import roach.codecs.*
@@ -37,17 +40,21 @@ def run(args: String*) =
     useDockerImage = argsMap.get("-use-docker-image").getOrElse("postgres:17-alpine")
     excludeTables = argsMap.get("-exclude-tables").toList.flatMap(_.split(","))
     scalaVersion = argsMap.get("-scala-version").getOrElse("3.7.1")
+    forceRegeneration = argsMap.get("-force") match
+      case Some("1" | "true") => true
+      case _                  => false
   yield PgCodeGen(
     useDockerImage = useDockerImage,
     outputDir = outputDir,
     pkgName = pkgName,
     sourceDir = sourceDir,
     excludeTables = excludeTables,
-    scalaVersion = scalaVersion
+    scalaVersion = scalaVersion,
+    forceRegeneration = forceRegeneration
   )) match
     case Right(codegen) =>
       Await
-        .ready(codegen.run(true), 30.seconds)
+        .ready(codegen.run(), 30.seconds)
         .onComplete:
           case Failure(err) =>
             Console.err.println(s"Failure: ${err.printStackTrace()}")
@@ -69,7 +76,8 @@ class PgCodeGen(
     pkgName: String,
     sourceDir: File,
     excludeTables: List[String],
-    scalaVersion: String
+    scalaVersion: String,
+    forceRegeneration: Boolean = false
 )(using ExecutionContext) {
   import PgCodeGen.*
 
@@ -224,7 +232,17 @@ class PgCodeGen(
         UNION
         SELECT matviewname FROM pg_matviews WHERE schemaname = 'public';""".all(name).toSet
 
-  private def listMigrationFiles = Future(sourceDir.listFiles().toList)
+  private def listMigrationFiles: Future[(List[File], String)] = Future:
+    val digest = MessageDigest.getInstance("SHA-1")
+    val files = listFilesRec(sourceDir.toPath)
+      .map(file =>
+        digest.update(file.getPath.getBytes("UTF-8"))
+        if !file.isDirectory then digest.update(Files.readAllBytes(file.toPath))
+        file
+      )
+      .toList
+
+    (files, digest.digest().map("%02x".format(_)).mkString)
 
   private def generatorTask =
     for
@@ -266,10 +284,15 @@ class PgCodeGen(
             )
         }
       }
-      _ <- Future {
-        Files.deleteIfExists(pkgDir)
-        Files.createDirectories(pkgDir)
-      }
+      _ <-
+        if Files.exists(pkgDir) then
+          Future.traverse(listFilesRec(pkgDir))(f => Future(f.delete())).flatMap { _ =>
+            Future {
+              Files.delete(pkgDir)
+              Files.createDirectories(pkgDir)
+            }
+          }
+        else Future(Files.createDirectories(pkgDir))
       files <- Future.traverse(filesToWrite): (path, content) =>
         Future:
           Files.writeString(path, content)
@@ -746,61 +769,40 @@ class PgCodeGen(
     generatedColStm ++ defaultStm ++ selectCol
   }
 
-  private def lastModified(modified: List[Long]): Option[Long] =
-    modified.sorted(using Ordering[Long].reverse).headOption
+  private def listFilesRec(path: Path): Iterator[File] =
+    import scala.jdk.CollectionConverters.*
+    Files.walk(path).iterator().asScala.map(_.toFile())
 
-  private def outputFilesOutdated(
-      sourcesModified: List[Long]
-  ): (outPaths: List[File], outdated: Boolean) =
-    val out =
-      if Files.exists(pkgDir) then
-        File(pkgDir.toString())
-          .listFiles()
-          .map(f => (f, f.lastModified()))
-          .toList
-      else Nil
-    val res = for
-      s <- lastModified(sourcesModified)
-      o <- lastModified(out.map(_._2))
-      // can't rely on timestamps when running in CI
-      isNotCI = sys.env.get("CI").isEmpty
-    yield isNotCI && o < s
-
-    (outPaths = out.map(_._1), outdated = res.getOrElse(true))
-
-  def run(forceRegeneration: Boolean = false): Future[List[File]] =
+  def run(): Future[List[File]] =
     if !scalaVersion.startsWith("3") then
       Future.failed(
         UnsupportedOperationException(s"Scala version smaller than 3 is not supported. Used version: $scalaVersion")
       )
     else
       listMigrationFiles
-        .map { sourceFiles =>
-          println(s"Found ${sourceFiles.length} source files")
-          (
-            sourceFiles,
-            outputFilesOutdated(sourceFiles.map(_.lastModified())),
-            Files.exists(pkgDir)
-          )
-        }
         .flatMap:
-          case (sourceFiles, (outFiles, isOutdated), pkgDirExists) =>
-            if forceRegeneration || (!pkgDirExists || isOutdated) then
+          case (sourceFiles, sha1) =>
+            val isDivergent = !Files.exists(pkgDir / sha1)
+            if forceRegeneration || isDivergent then
               for
                 _ <-
                   if sourceFiles.isEmpty then
                     Future.failed(Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
                   else Future.unit
-                _ = if !pkgDirExists then println("Generated source not found")
-                _ = if pkgDirExists && isOutdated then println("Generated source is outdated")
                 _ = println("Generating Postgres models")
                 _ <- rmDocker
                 _ <- initGeneratorDatabase
                 files <- generatorTask.transformWith:
-                  case Success(files) => rmDocker.map(_ => files)
-                  case Failure(err)   => rmDocker.flatMap(_ => Future.failed(err))
+                  case Success(files) =>
+                    rmDocker.flatMap: _ =>
+                      // persist the migrations source hash as file
+                      Future(Files.write(pkgDir / sha1, Array.empty[Byte])).map(_ => files)
+                  case Failure(err) => rmDocker.flatMap(_ => Future.failed(err))
               yield files
-            else Future.successful(outFiles)
+            else
+              Future:
+                println(s"Sources for $sha1 already generated. Nothing to do.")
+                listFilesRec(outputDir.toPath).toList
 }
 
 object PgCodeGen {

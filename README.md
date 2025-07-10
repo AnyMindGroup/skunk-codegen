@@ -29,6 +29,7 @@ Run the generator via command line:
 - `-source-dir`: Directory containing migration SQL files
 - `-use-docker-image`: (optional) Docker image for Postgres (default: postgres:17-alpine)
 - `-exclude-tables`: (optional) Comma-separated list of tables to exclude
+- `-force`: (optional) Force code generation (default: false)
 - `-scala-version`: (optional) Scala version (default: 3.7.1)
 
 ## Output

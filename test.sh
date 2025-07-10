@@ -1,18 +1,59 @@
 #!/usr/bin/env bash
 set -e
 
-rm -rf test-generated
-
+# generate binary
 scala-cli --power package \
   --native \
   --native-mode release-fast PgCodeGen.scala \
   -o .bin/codegen -f
 
+# run code generator
 ./.bin/codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
   -exclude-tables=unsupported_yet \
-  -source-dir=test-migrations
+  -source-dir=test-migrations \
+  -force=true
 
+TIMESTAMP_A=$(stat test-generated | grep Modify)
+
+# run test for generated code
 scala-cli run PgCodeGenTest.scala
+echo "✅ Test of generated code successful"
+
+# running generator again with -force=true should re-run code generation
+./.bin/codegen \
+  -use-docker-image="postgres:17-alpine" \
+  -output-dir=test-generated \
+  -pkg-name=generated \
+  -exclude-tables=unsupported_yet \
+  -source-dir=test-migrations \
+  -force=true
+
+TIMESTAMP_B=$(stat test-generated | grep Modify)
+
+if [ "$TIMESTAMP_A" != "$TIMESTAMP_B" ]; then
+  echo "✅ Code generation with -force=true as expected (timestamps differ)"
+else
+  echo "❌ Error: Code generation did not re-run (timestamps are the same)"
+  exit 1
+fi
+
+# running generator again with -force=false should not run code generation
+./.bin/codegen \
+  -use-docker-image="postgres:17-alpine" \
+  -output-dir=test-generated \
+  -pkg-name=generated \
+  -exclude-tables=unsupported_yet \
+  -source-dir=test-migrations\
+  -force=false
+
+TIMESTAMP_C=$(stat test-generated | grep Modify)
+
+if [ "$TIMESTAMP_B" == "$TIMESTAMP_C" ]; then
+  echo "✅ Code generation with -force=false as expected (timestamps are the same)"
+else
+  echo "❌ Error: Code generation -force=false not as expected (timestamps differ)"
+  exit 1
+fi
