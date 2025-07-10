@@ -54,14 +54,12 @@ def run(args: String*) =
   )) match
     case Right(codegen) =>
       Await
-        .ready(codegen.run(), 30.seconds)
+        .ready(codegen.run, 30.seconds)
         .onComplete:
           case Failure(err) =>
             Console.err.println(s"Failure: ${err.printStackTrace()}")
             sys.exit(1)
-          case Success(files) =>
-            println(s"Generated ${files.length} files")
-            sys.exit(0)
+          case Success(files) => sys.exit(0)
     case Left(err) =>
       Console.err.println(s"Failure: $err")
       sys.exit(1)
@@ -88,6 +86,7 @@ class PgCodeGen(
   private val databaseName = s"codegen_db_${Random.alphanumeric.take(10).mkString}"
   private val connectionString = s"postgresql://$user:$password@$host:$port/$databaseName"
   private val pkgDir = Paths.get(outputDir.getPath(), pkgName.replace('.', File.separatorChar))
+  private def outDir(sha1: String) = pkgDir / sha1
   private val schemaHistoryTableName = "dumbo_history"
 
   private def getConstraints =
@@ -232,19 +231,18 @@ class PgCodeGen(
         UNION
         SELECT matviewname FROM pg_matviews WHERE schemaname = 'public';""".all(name).toSet
 
-  private def listMigrationFiles: Future[(List[File], String)] = Future:
+  private def listMigrationFiles: Future[(List[Path], String)] = Future:
     val digest = MessageDigest.getInstance("SHA-1")
     val files = listFilesRec(sourceDir.toPath)
-      .map(file =>
-        digest.update(file.getPath.getBytes("UTF-8"))
-        if !file.isDirectory then digest.update(Files.readAllBytes(file.toPath))
-        file
+      .map(path =>
+        digest.update(path.toString.getBytes("UTF-8"))
+        if !Files.isDirectory(path) then digest.update(Files.readAllBytes(path))
+        path
       )
-      .toList
 
     (files, digest.digest().map("%02x".format(_)).mkString)
 
-  private def generatorTask =
+  private def generatorTask(sha1: String) =
     for
       _ <- Future {
         println("Running migration...")
@@ -274,25 +272,24 @@ class PgCodeGen(
         .zip(getViews)
         .map:
           case (((columns, indexes), constraints), views) => toTables(columns, indexes, constraints, views)
-      filesToWrite = pkgFiles(tables, enums) ::: tables.flatMap { table =>
+      filesToWrite = pkgFiles(tables, enums, sha1) ::: tables.flatMap { table =>
         rowFileContent(table) match {
           case None             => Nil
           case Some(rowContent) =>
             List(
-              pkgDir / s"${table.tableClassName}.scala" -> tableFileContent(table),
-              pkgDir / s"${table.rowClassName}.scala" -> rowContent
+              outDir(sha1) / s"${table.tableClassName}.scala" -> tableFileContent(table),
+              outDir(sha1) / s"${table.rowClassName}.scala" -> rowContent
             )
         }
       }
       _ <-
         if Files.exists(pkgDir) then
-          Future.traverse(listFilesRec(pkgDir))(f => Future(f.delete())).flatMap { _ =>
-            Future {
-              Files.delete(pkgDir)
-              Files.createDirectories(pkgDir)
-            }
-          }
-        else Future(Files.createDirectories(pkgDir))
+          Future:
+            listFilesRec(pkgDir)
+              .sortBy(_.getNameCount)(using Ordering[Int].reverse)
+              .foreach(Files.delete(_))
+            Files.createDirectories(outDir(sha1))
+        else Future(Files.createDirectories(outDir(sha1)))
       files <- Future.traverse(filesToWrite): (path, content) =>
         Future:
           Files.writeString(path, content)
@@ -389,10 +386,10 @@ class PgCodeGen(
     }
   }
 
-  private def scalaEnums(enums: Enums): Vector[(Path, String)] =
+  private def scalaEnums(enums: Enums, sha1: String): Vector[(Path, String)] =
     enums.map { e =>
       (
-        pkgDir / s"${e.scalaName}.scala",
+        outDir(sha1) / s"${e.scalaName}.scala",
         s"""|package $pkgName
             |
             |import skunk.Codec
@@ -411,7 +408,7 @@ class PgCodeGen(
       )
     }
 
-  private def pkgFiles(tables: List[Table], enums: Enums): List[(Path, String)] = {
+  private def pkgFiles(tables: List[Table], enums: Enums, sha1: String): List[(Path, String)] = {
     val indexes = tables.flatMap { table =>
       table.indexes.map(i =>
         s"""val ${toScalaName(i.name)} = Index(name = "${i.name}", createSql = \"\"\"${i.createSql}\"\"\")"""
@@ -430,7 +427,7 @@ class PgCodeGen(
     val pkgLastPart = pkgName.split('.').last
     List(
       (
-        pkgDir / "package.scala",
+        outDir(sha1) / "package.scala",
         List(
           s"package $pkgName",
           "",
@@ -439,32 +436,22 @@ class PgCodeGen(
           if constraints.nonEmpty then constraints.mkString("\nobject constraints:\n  ", "\n  ", "\n") else ""
         ).mkString("\n")
       ),
-      // (
-      //   pkgDir / "Column.scala",
-      //   s"""|package $pkgName
-      //       |
-      //       |abstract class Column[T](val name: String) {
-      //       |  type Type = T
-      //       |  override def toString: String = name
-      //       |}
-      //       |""".stripMargin,
-      // ),
       (
-        pkgDir / "Index.scala",
+        outDir(sha1) / "Index.scala",
         s"""|package $pkgName
             |
             |final case class Index(name: String, createSql: String)
            """.stripMargin
       ),
       (
-        pkgDir / "Constraint.scala",
+        outDir(sha1) / "Constraint.scala",
         s"""|package $pkgName
             |
             |final case class Constraint(name: String)
            """.stripMargin
       ),
       (
-        pkgDir / "Cols.scala",
+        outDir(sha1) / "Cols.scala",
         s"""|package $pkgName
             |import skunk.*
             |import cats.data.NonEmptyList
@@ -488,7 +475,7 @@ class PgCodeGen(
             |}
             |""".stripMargin
       )
-    ) ++ scalaEnums(enums)
+    ) ++ scalaEnums(enums, sha1)
   }
 
   private def toScalaType(t: Type, isNullable: Boolean, enums: Enums): Result[ScalaType] =
@@ -769,11 +756,15 @@ class PgCodeGen(
     generatedColStm ++ defaultStm ++ selectCol
   }
 
-  private def listFilesRec(path: Path): Iterator[File] =
+  private def listFilesRec(path: Path): List[Path] =
     import scala.jdk.CollectionConverters.*
-    Files.walk(path).iterator().asScala.map(_.toFile())
+    Files
+      .walk(path)
+      .iterator()
+      .asScala
+      .toList
 
-  def run(): Future[List[File]] =
+  def run: Future[List[File]] =
     if !scalaVersion.startsWith("3") then
       Future.failed(
         UnsupportedOperationException(s"Scala version smaller than 3 is not supported. Used version: $scalaVersion")
@@ -782,7 +773,7 @@ class PgCodeGen(
       listMigrationFiles
         .flatMap:
           case (sourceFiles, sha1) =>
-            val isDivergent = !Files.exists(pkgDir / sha1)
+            val isDivergent = !Files.exists(outDir(sha1))
             if forceRegeneration || isDivergent then
               for
                 _ <-
@@ -792,17 +783,17 @@ class PgCodeGen(
                 _ = println("Generating Postgres models")
                 _ <- rmDocker
                 _ <- initGeneratorDatabase
-                files <- generatorTask.transformWith:
+                files <- generatorTask(sha1).transformWith:
                   case Success(files) =>
-                    rmDocker.flatMap: _ =>
-                      // persist the migrations source hash as file
-                      Future(Files.write(pkgDir / sha1, Array.empty[Byte])).map(_ => files)
+                    rmDocker.map: _ =>
+                      println(s"Generated ${files.length} files")
+                      files
                   case Failure(err) => rmDocker.flatMap(_ => Future.failed(err))
               yield files
             else
               Future:
-                println(s"Sources for $sha1 already generated. Nothing to do.")
-                listFilesRec(outputDir.toPath).toList
+                println(s"Generated code already exists in ${outDir(sha1)}. Skipping code generation.")
+                listFilesRec(outputDir.toPath).map(_.toFile)
 }
 
 object PgCodeGen {
