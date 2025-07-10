@@ -281,20 +281,14 @@ class PgCodeGen(
   private val pgServiceName = s"codegen_${pkgName.replace('.', '-')}_${Random.alphanumeric.take(10).mkString}"
 
   @tailrec
-  private def findFreePort(fromPort: Int = 5432): Int = {
-    try {
-      val socket = new ServerSocket(fromPort)
+  private def findFreePort(): Int =
+    try
+      val portCandidate = 1024 + Random.nextInt(65535 - 1024)
+      val socket = new ServerSocket(portCandidate)
       val port = socket.getLocalPort
-      println(s"Found free port: $port")
       socket.close()
       port
-    } catch {
-      case e: Throwable =>
-        println(s"Port $fromPort not available: $e")
-        // socket. socket.close()
-        findFreePort(fromPort + 1)
-    }
-  }
+    catch case e: Throwable => findFreePort()
 
   private def initGeneratorDatabase =
     def awaitReadiness: Future[Unit] =

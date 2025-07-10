@@ -6,6 +6,7 @@
 
 import scala.annotation.tailrec
 import scala.concurrent.duration.*
+import scala.util.Random
 
 import java.net.ServerSocket
 import java.time.{OffsetDateTime, ZoneOffset}
@@ -228,13 +229,14 @@ object GeneratedCodeTest extends IOApp {
     .runMigration
 
   @tailrec
-  private def findFreePort(fromPort: Int = 5432): Int =
+  private def findFreePort(): Int =
     try
-      val socket = new ServerSocket(fromPort)
+      val portCandidate = 1024 + Random.nextInt(65535 - 1024)
+      val socket = new ServerSocket(portCandidate)
       val port = socket.getLocalPort
       socket.close()
       port
-    catch case e: Throwable => findFreePort(fromPort + 1)
+    catch case e: Throwable => findFreePort()
 
   private def awaitReadiness(port: Int) =
     fs2.Stream
