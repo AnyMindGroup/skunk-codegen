@@ -38,6 +38,7 @@ def run(args: String*) =
     pkgName <- argsMap.get("-pkg-name").toRight("pkgName not set")
     sourceDir <- argsMap.get("-source-dir").map(File(_)).toRight("sourceDir not set")
     useDockerImage = argsMap.get("-use-docker-image").getOrElse("postgres:17-alpine")
+    useConnection = argsMap.get("-use-connection")
     excludeTables = argsMap.get("-exclude-tables").toList.flatMap(_.split(","))
     scalaVersion = argsMap.get("-scala-version").getOrElse("3.7.1")
     forceRegeneration = argsMap.get("-force") match
@@ -50,7 +51,8 @@ def run(args: String*) =
     sourceDir = sourceDir,
     excludeTables = excludeTables,
     scalaVersion = scalaVersion,
-    forceRegeneration = forceRegeneration
+    forceRegeneration = forceRegeneration,
+    useConnection = useConnection
   )) match
     case Right(codegen) =>
       Await
@@ -75,6 +77,7 @@ class PgCodeGen(
     sourceDir: File,
     excludeTables: List[String],
     scalaVersion: String,
+    useConnection: Option[String],
     forceRegeneration: Boolean = false
 )(using ExecutionContext) {
   import PgCodeGen.*
@@ -84,7 +87,14 @@ class PgCodeGen(
   private val port = findFreePort()
   private val password = "postgres"
   private val databaseName = s"codegen_db_${Random.alphanumeric.take(10).mkString}"
-  private val connectionString = s"postgresql://$user:$password@$host:$port/$databaseName"
+  private val connectionString = useConnection match
+    case None    => s"postgresql://$user:$password@$host:$port/$databaseName"
+    case Some(c) =>
+      Zone:
+        Pool.single(c)(_.withLease(sql"CREATE DATABASE $databaseName".exec()))
+      println(s"Created database $databaseName")
+      s"${c.splitAt(c.lastIndexOf("/"))._1}/$databaseName"
+
   private val pkgDir = Paths.get(outputDir.getPath(), pkgName.replace('.', File.separatorChar))
   private def outDir(sha1: String) = pkgDir / sha1
   private val schemaHistoryTableName = "dumbo_history"
@@ -310,7 +320,7 @@ class PgCodeGen(
       port
     catch case e: Throwable => findFreePort()
 
-  private def initGeneratorDatabase =
+  private def initGeneratorDatabase: Future[String] =
     def awaitReadiness: Future[Unit] =
       @tailrec
       def check(attempt: Int): Boolean =
@@ -333,10 +343,19 @@ class PgCodeGen(
       Future(check(0))
 
     for
-      _ <- Future:
-        s"docker run -p $port:5432 -h $host -e POSTGRES_USER=$user -e POSTGRES_PASSWORD=$password -e POSTGRES_DB=$databaseName --name $pgServiceName -d $useDockerImage".!!
+      c <- Future:
+        if useConnection.isEmpty then
+          s"docker run -p $port:5432 -h $host -e POSTGRES_USER=$user -e POSTGRES_PASSWORD=$password -e POSTGRES_DB=$databaseName --name $pgServiceName -d $useDockerImage".!!
+          connectionString
+        else
+          Zone:
+            Pool.single(connectionString): pool =>
+              pool.withLease:
+                sql"CREATE DATABASE $databaseName".exec()
+          println(s"Created $databaseName")
+          s"postgresql://$user:$password@$host:$port/$databaseName"
       _ <- awaitReadiness
-    yield ()
+    yield c
   end initGeneratorDatabase
 
   private def rmDocker = if (useDockerImage.nonEmpty) {

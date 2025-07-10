@@ -46,7 +46,7 @@ fi
   -output-dir=test-generated \
   -pkg-name=generated \
   -exclude-tables=unsupported_yet \
-  -source-dir=test-migrations\
+  -source-dir=test-migrations \
   -force=false
 
 TIMESTAMP_C=$(stat test-generated | grep Modify)
@@ -57,3 +57,21 @@ else
   echo "❌ Error: Code generation -force=false not as expected (timestamps differ)"
   exit 1
 fi
+
+# TODO make this test pass
+# docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d postgres:17-alpine
+
+# sleep 2
+
+# ./out/codegen \
+#   -use-docker-image="postgres:17-alpine" \
+#   -output-dir=test-generated \
+#   -pkg-name=generated \
+#   -exclude-tables=unsupported_yet \
+#   -source-dir=test-migrations \
+#   -use-connection="postgresql://postgres:postgres@localhost:5555/postgres" \
+#   -force=true
+
+# docker rm -f codegentest
+
+# echo "✅ Code generation for provided connection ok."
