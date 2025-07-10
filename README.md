@@ -12,10 +12,15 @@
 
 ## Usage
 
-Run the generator as a Scala Native application with arguments:
+Run the generator via command line:
 
-```
-run -host=localhost -user=postgres -database=mydb -port=5432 -output-dir=src/main/scala -pkg-name=com.example.generated -source-dir=migrations
+```shell
+./codegen \
+  -use-docker-image="postgres:17-alpine" \
+  -output-dir=my/out/dir \
+  -pkg-name=my.package \
+  -exclude-tables=table_name_a,table_name_b \
+  -source-dir=path/to/db/migrations
 ```
 
 **Key arguments:**
