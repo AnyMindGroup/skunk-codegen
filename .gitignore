@@ -17,4 +17,4 @@ target/
 metals.sbt
 test-generated
 .scala-build/
-.bin
+out

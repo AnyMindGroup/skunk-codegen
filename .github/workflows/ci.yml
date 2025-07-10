@@ -23,7 +23,7 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install libpq && brew link --force libpq
       - run: |
-          OUT=.bin/codegen_$(uname -m)
+          OUT=out/codegen_$(uname -m)
           echo "Compiling to $OUT"
           scala-cli --power package \
             --native \
@@ -33,7 +33,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: codegen-bin-${{ matrix.os }}
-          path: .bin/*
+          path: out/*
   test:
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +47,7 @@ jobs:
   publish-bin:
     name: Publish command line binaries
     needs: [build]
-    if: github.ref == 'refs/heads/make-code-generator-sbt-independent'
+    # if: github.ref == 'refs/heads/make-code-generator-sbt-independent'
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -57,10 +57,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: codegen-bin-*
-          path: .bin
+          path: out
           merge-multiple: true
 
       - name: Upload release binaries
         uses: softprops/action-gh-release@v1
         with:
-          files: .bin/*
+          files: out/*

@@ -5,10 +5,10 @@ set -e
 scala-cli --power package \
   --native \
   --native-mode release-fast PgCodeGen.scala \
-  -o .bin/codegen -f
+  -o out/codegen -f
 
 # run code generator
-./.bin/codegen \
+./out/codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
@@ -23,7 +23,7 @@ scala-cli run PgCodeGenTest.scala
 echo "✅ Test of generated code successful"
 
 # running generator again with -force=true should re-run code generation
-./.bin/codegen \
+./out/codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
@@ -41,7 +41,7 @@ else
 fi
 
 # running generator again with -force=false should not run code generation
-./.bin/codegen \
+./out/codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
