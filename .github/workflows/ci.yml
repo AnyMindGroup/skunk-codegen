@@ -28,7 +28,8 @@ jobs:
           scala-cli --power package \
             --native \
             --native-mode release-fast PgCodeGen.scala \
-            -o $OUT -f
+            -o $OUT -f && \
+          zip "${OUT}.zip" $OUT
       - name: Upload command line binaries
         uses: actions/upload-artifact@v4
         with:
