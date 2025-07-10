@@ -1,3 +1,37 @@
-# Source code generator from Postgres database schema
+# skunk-codegen
 
-TODO...
+`skunk-codegen` is a Scala 3 code generator for PostgreSQL database schemas. It introspects your database and generates type-safe Scala code for use with the [skunk](https://tpolecat.github.io/skunk/) functional Postgres library.
+
+## Features
+
+- **Schema Introspection:** Reads tables, columns, constraints (primary, unique, foreign keys), indexes, and enums from a PostgreSQL database.
+- **Code Generation:** Produces Scala case classes, codecs, and table definitions for each table and enum in your schema.
+- **Migration Support:** Runs database migrations using a Dockerized migration tool before code generation.
+- **Docker Integration:** Can spin up a PostgreSQL Docker container for isolated code generation.
+- **Customizable:** Supports excluding tables, specifying output/source directories, and customizing package names.
+
+## Usage
+
+Run the generator as a Scala Native application with arguments:
+
+```
+run -host=localhost -user=postgres -database=mydb -port=5432 -output-dir=src/main/scala -pkg-name=com.example.generated -source-dir=migrations
+```
+
+**Key arguments:**
+- `-output-dir`: Output directory for generated Scala files
+- `-pkg-name`: Scala package name for generated code
+- `-source-dir`: Directory containing migration SQL files
+- `-use-docker-image`: (optional) Docker image for Postgres (default: postgres:17-alpine)
+- `-exclude-tables`: (optional) Comma-separated list of tables to exclude
+- `-scala-version`: (optional) Scala version (default: 3.7.1)
+
+## Output
+
+- Scala files for each table and enum in the specified package directory.
+- Type-safe codecs and helper methods for querying and updating tables.
+- Support for array types, nullable columns, and enum mappings.
+
+---
+
+For more details, see the code in [`PgCodeGen.scala`](PgCodeGen.scala).
