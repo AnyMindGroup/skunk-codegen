@@ -17,6 +17,9 @@ jobs:
       - uses: actions/checkout@v2
       - uses: coursier/cache-action@v6
       - uses: VirtusLab/scala-cli-setup@main
+      - name: Install libpq5 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libpq
       - run: |
           OUT=.bin/codegen_$(uname -m)
           echo "Compiling to $OUT"
