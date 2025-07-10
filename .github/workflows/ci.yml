@@ -8,35 +8,32 @@ concurrency:
   group: ${{ github.workflow }} @ ${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  test:
+  build:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-15]
     runs-on: ${{ matrix.os }}
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5434:5432
+    steps:
+      - uses: actions/checkout@v2
+      - uses: coursier/cache-action@v6
+      - uses: VirtusLab/scala-cli-setup@main
+      - run: |
+          OUT=.bin/codegen_$(uname -m)
+          echo "Compiling to $OUT"
+          scala-cli --power package \
+            --native \
+            --native-mode release-fast PgCodeGen.scala \
+            -o $OUT -f
+  test:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: coursier/cache-action@v6
       - uses: VirtusLab/scala-cli-setup@main
         with:
           jvm: temurin:21
-      - name: Set up Docker on macOS
-        if: runner.os == 'macOS'
-        run: |
-          brew install --cask docker
-          open /Applications/Docker.app
-          echo 'Waiting for Docker to start...'
-          while ! docker system info > /dev/null 2>&1; do sleep 1; done
       - run: ./test.sh
-  # TODO update release    
+  # TODO update release
   release:
     name: Release
     runs-on: ubuntu-latest
