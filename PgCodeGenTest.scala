@@ -7,22 +7,21 @@
 import scala.annotation.tailrec
 import scala.concurrent.duration.*
 
-import cats.effect.{ExitCode, IO}
-import cats.effect.IOApp
+import java.net.ServerSocket
+import java.time.{OffsetDateTime, ZoneOffset}
+import java.time.temporal.ChronoUnit
+
+import cats.effect.{ExitCode, IO, IOApp}
 import cats.effect.std.Console
 import cats.implicits.*
 import dumbo.ConnectionConfig
 import fs2.io.file.Path
 import generated.*
-import java.net.ServerSocket
-import java.time.{OffsetDateTime, ZoneOffset}
-import java.time.temporal.ChronoUnit
 import org.typelevel.otel4s.trace.Tracer.Implicits.noop
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
-import skunk.util.Origin
-import skunk.util.Typer
+import skunk.util.{Origin, Typer}
 import sys.process.*
 
 object GeneratedCodeTest extends IOApp {

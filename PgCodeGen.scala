@@ -6,23 +6,17 @@
 package com.anymindgroup
 
 import scala.annotation.tailrec
-import scala.concurrent.Await
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.*
 import scala.scalanative.unsafe.Zone
 import scala.sys.process.*
-import scala.util.Failure
-import scala.util.Random
-import scala.util.Success
-import scala.util.Using
+import scala.util.{Failure, Random, Success, Using}
 
 import java.io.File
 import java.net.ServerSocket
 import java.nio.charset.Charset
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
+import java.nio.file.{Files, Path, Paths}
+
 import roach.*
 import roach.codecs.*
 
