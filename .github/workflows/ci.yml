@@ -28,6 +28,13 @@ jobs:
       - uses: VirtusLab/scala-cli-setup@main
         with:
           jvm: temurin:21
+      - name: Set up Docker on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install --cask docker
+          open /Applications/Docker.app
+          echo 'Waiting for Docker to start...'
+          while ! docker system info > /dev/null 2>&1; do sleep 1; done
       - run: ./test.sh
   # TODO update release    
   release:
