@@ -29,7 +29,7 @@ jobs:
             --native \
             --native-mode release-fast PgCodeGen.scala \
             -o $OUT -f && \
-          zip "${OUT}.zip" $OUT
+          zip -j "${OUT}.zip" $OUT
       - name: Upload command line binaries
         uses: actions/upload-artifact@v4
         with:
