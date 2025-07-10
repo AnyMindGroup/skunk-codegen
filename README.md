@@ -15,12 +15,65 @@
 Run the generator via command line:
 
 ```shell
-./codegen \
+./path/to/codegen_x86_64 \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=my/out/dir \
   -pkg-name=my.package \
   -exclude-tables=table_name_a,table_name_b \
   -source-dir=path/to/db/migrations
+```
+
+Example usage of command line in sbt:
+
+```scala
+lazy val myProject = (project in file("."))
+  .settings(
+    Compile / sourceGenerators += skunkCodeGenTask(
+      pkgName = "my.package",
+      migrationsDir = file("src") / "main" / "resources" / "db" / "migration",
+    )
+  )  
+
+def skunkCodeGenTask(
+  pkgName: String,
+  migrationsDir: File,
+  excludeTables: List[String] = Nil,
+) = Def.task {
+  import sys.process.*
+  import scala.jdk.CollectionConverters.*
+  import java.nio.file.Files
+
+  val logger    = streams.value.log
+  val outDir    = (Compile / sourceManaged).value
+  val outPkgDir = outDir / pkgName.split('.').mkString(java.io.File.separator)
+
+  val cmd = List(
+    "./path/to/codegen_x86_64",
+    s"-output-dir=${outDir.getPath()}",
+    s"-pkg-name=$pkgName",
+    s"-source-dir=${migrationsDir.getPath()}",
+    """-use-docker-image="postgres:17-alpine"""",
+    s"-exclude-tables=${excludeTables.mkString(",")}",
+    "-force=false",
+  ).mkString(" ")
+
+  logger.debug(cmd)
+
+  val errs = scala.collection.mutable.ListBuffer.empty[String]
+  cmd ! ProcessLogger(i => logger.info(s"[Skunk codegen] $i"), e => errs += e) match {
+    case 0 => ()
+    case c => throw new InterruptedException(s"Failure on code generation:\n${errs.mkString("\n")}")
+  }
+
+  Files
+    .walk(outPkgDir.toPath)
+    .iterator()
+    .asScala
+    .collect {
+      case p if !Files.isDirectory(p) => p.toFile
+    }
+    .toList
+}
 ```
 
 **Key arguments:**
