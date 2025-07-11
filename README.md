@@ -6,7 +6,7 @@
 
 - **Schema Introspection:** Reads tables, columns, constraints (primary, unique, foreign keys), indexes, and enums from a PostgreSQL database.
 - **Code Generation:** Produces Scala case classes, codecs, and table definitions for each table and enum in your schema.
-- **Migration Support:** Runs database migrations using a Dockerized migration tool before code generation.
+- **Migration Support:** Runs database migrations using dockerized version of [dumbo](https://github.com/rolang/dumbo) before code generation.
 - **Docker Integration:** Can spin up a PostgreSQL Docker container for isolated code generation.
 - **Customizable:** Supports excluding tables, specifying output/source directories, and customizing package names.
 
