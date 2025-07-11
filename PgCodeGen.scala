@@ -35,7 +35,7 @@ def run(args: String*) =
           args
             .map(arg =>
               val (k, v) = arg.splitAt(arg.indexOf("="))
-              (k, v.stripPrefix("="))
+              (k, v.stripPrefix("=").stripPrefix("\"").stripPrefix("'").stripSuffix("\"").stripSuffix("'"))
             )
             .toMap
         )
@@ -58,6 +58,7 @@ def run(args: String*) =
       case Some("1" | "true") => true
       case _                  => false
     migrationCmd = argsMap.get("-migration-command")
+    _ = if debug then println(s"Running code generator with arguments: ${args.mkString(", ")}")
   yield PgCodeGen.run(
     useDockerImage = useDockerImage,
     outputDir = outputDir,
