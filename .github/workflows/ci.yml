@@ -47,7 +47,7 @@ jobs:
         run: /home/linuxbrew/.linuxbrew/bin/brew install s2n utf8proc
       - run: ./test.sh
         env:
-          LD_LIBRARY_PATH: "/home/linuxbrew/.linuxbrew/lib"
+          LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/home/linuxbrew/.linuxbrew/lib
 
   publish-bin:
     name: Publish command line binaries
