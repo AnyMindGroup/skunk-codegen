@@ -44,7 +44,7 @@ jobs:
         with:
           jvm: temurin:21
       - name: Install s2n and utf8proc
-        run: /home/linuxbrew/.linuxbrew/bin/brew install s2n utf8proc
+        run: /home/linuxbrew/.linuxbrew/bin/brew install s2n utf8proc && /home/linuxbrew/.linuxbrew/bin/brew link --force s2n utf8proc
       - run: ./test.sh
 
   publish-bin:
