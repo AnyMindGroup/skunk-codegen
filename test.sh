@@ -61,17 +61,17 @@ fi
 echo "⏳ running code generator with provided connection"
 docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d postgres:17-alpine
 
-./out/codegen \
+(./out/codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
   -exclude-tables=unsupported_yet \
   -source-dir=test/migrations \
   -use-connection=postgresql://postgres:postgres@localhost:5555/postgres \
-  -force=true && echo "✅ Code generation for provided connection ok."
+  -force=true && echo "✅ Code generation for provided connection ok.") || (docker rm -f codegentest; exit 1)
 
 echo "⏳ Running code generator with custom migrations command"
-./out/codegen \
+(./out/codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
@@ -80,6 +80,6 @@ echo "⏳ Running code generator with custom migrations command"
   -migration-command="./test/dumbo -user=%user -password=%password -url=postgresql://%host:%port/%database -location=%sourcePath migrate" \
   -debug=1 \
   -use-connection=postgresql://postgres:postgres@localhost:5555/postgres \
-  -force=true && echo "✅ Code generation with custom migration command ok."
+  -force=true && echo "✅ Code generation with custom migration command ok.") || (docker rm -f codegentest; exit 1)
 
 docker rm -f codegentest

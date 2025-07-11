@@ -28,14 +28,18 @@ import roach.codecs.*
 def run(args: String*) =
   given ExecutionContext = ExecutionContext.global
 
-  val argsMap = args
-    .map(arg =>
-      val (k, v) = arg.splitAt(arg.indexOf("="))
-      (k, v.stripPrefix("="))
-    )
-    .toMap
-
   (for
+    argsMap <-
+      try
+        Right(
+          args
+            .map(arg =>
+              val (k, v) = arg.splitAt(arg.indexOf("="))
+              (k, v.stripPrefix("="))
+            )
+            .toMap
+        )
+      catch case e: Throwable => Left(e.getMessage())
     outputDir <- argsMap.get("-output-dir").map(File(_)).toRight("outputDir not set")
     pkgName <- argsMap.get("-pkg-name").toRight("pkgName not set")
     sourceDir <- argsMap.get("-source-dir").map(File(_)).toRight("sourceDir not set")
@@ -67,13 +71,13 @@ def run(args: String*) =
     migrationCommand = migrationCmd
   )) match
     case Right(task) =>
-      Await
-        .ready(task, 30.seconds)
-        .onComplete:
-          case Failure(err) =>
-            Console.err.println(s"Failure: ${err.getMessage()}")
-            sys.exit(1)
-          case Success(files) => sys.exit(0)
+      try
+        Await.result(task, 30.seconds)
+        sys.exit(0)
+      catch
+        case err: Throwable =>
+          Console.err.println(s"Failure: ${err.getMessage()}")
+          sys.exit(1)
     case Left(err) =>
       Console.err.println(s"Failure: $err")
       sys.exit(1)
