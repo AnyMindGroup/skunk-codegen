@@ -7,13 +7,13 @@ scala-cli --power package \
   --native-mode release-fast PgCodeGen.scala \
   -o out/codegen -f
 
-# run code generator
+echo "⏳Test generated code"
 ./out/codegen \
-  -use-docker-image="postgres:17-alpine" \
+  -use-docker-image=postgres:17-alpine \
   -output-dir=test-generated \
   -pkg-name=generated \
   -exclude-tables=unsupported_yet \
-  -source-dir=test-migrations \
+  -source-dir=test/migrations \
   -force=true
 
 TIMESTAMP_A=$(stat test-generated | grep Modify)
@@ -22,13 +22,13 @@ TIMESTAMP_A=$(stat test-generated | grep Modify)
 scala-cli run PgCodeGenTest.scala
 echo "✅ Test of generated code successful"
 
-# running generator again with -force=true should re-run code generation
+echo "⏳running generator again with -force=true should re-run code generation"
 ./out/codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
   -exclude-tables=unsupported_yet \
-  -source-dir=test-migrations \
+  -source-dir=test/migrations \
   -force=true
 
 TIMESTAMP_B=$(stat test-generated | grep Modify)
@@ -40,13 +40,13 @@ else
   exit 1
 fi
 
-# running generator again with -force=false should not run code generation
+echo "⏳ running generator again with -force=false should not run code generation"
 ./out/codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
   -exclude-tables=unsupported_yet \
-  -source-dir=test-migrations \
+  -source-dir=test/migrations \
   -force=false
 
 TIMESTAMP_C=$(stat test-generated | grep Modify)
@@ -58,7 +58,7 @@ else
   exit 1
 fi
 
-# running code generator with provided connection
+echo "⏳ running code generator with provided connection"
 docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d postgres:17-alpine
 
 ./out/codegen \
@@ -66,8 +66,20 @@ docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d
   -output-dir=test-generated \
   -pkg-name=generated \
   -exclude-tables=unsupported_yet \
-  -source-dir=test-migrations \
-  -use-connection="postgresql://postgres:postgres@localhost:5555/postgres" \
+  -source-dir=test/migrations \
+  -use-connection=postgresql://postgres:postgres@localhost:5555/postgres \
   -force=true && echo "✅ Code generation for provided connection ok."
+
+echo "⏳ Running code generator with custom migrations command"
+./out/codegen \
+  -use-docker-image="postgres:17-alpine" \
+  -output-dir=test-generated \
+  -pkg-name=generated \
+  -exclude-tables=unsupported_yet \
+  -source-dir=test/migrations \
+  -migration-command="./test/dumbo -user=%user -password=%password -url=postgresql://%host:%port/%database -location=%sourcePath migrate" \
+  -debug=1 \
+  -use-connection=postgresql://postgres:postgres@localhost:5555/postgres \
+  -force=true && echo "✅ Code generation with custom migration command ok."
 
 docker rm -f codegentest

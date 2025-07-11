@@ -216,7 +216,7 @@ object GeneratedCodeTest extends IOApp {
       case Left(err) => Console[IO].printStackTrace(err) >> IO("docker rm -f codegen-test".!!).as(ExitCode.Error)
 
   private def migrate(port: Int) = dumbo.Dumbo
-    .withFilesIn[IO](Path("test-migrations"))
+    .withFilesIn[IO](Path("test/migrations"))
     .apply(
       connection = ConnectionConfig(
         host = "localhost",

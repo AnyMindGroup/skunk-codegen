@@ -52,7 +52,6 @@ def skunkCodeGenTask(
     s"-output-dir=${outDir.getPath()}",
     s"-pkg-name=$pkgName",
     s"-source-dir=${migrationsDir.getPath()}",
-    """-use-docker-image="postgres:17-alpine"""",
     s"-exclude-tables=${excludeTables.mkString(",")}",
     "-force=false",
   ).mkString(" ")
@@ -86,6 +85,20 @@ def skunkCodeGenTask(
 - `-scala-version`: Scala version (default: 3.7.1)
 - `-debug`: Enable debug output (true/1 to enable)
 - `-force`: Force code generation, ignoring cache (true/1 to enable)
+- `-migration-command` : Custom command line to run for migrations.
+  Available placeholders that can be used for the command:  
+  - `%user` Postgres user 
+  - `%password` Postgres password
+  - `%host` Postgres host
+  - `%port` Postgres port
+  - `%database` Postgres database
+  - `%sourcePath` Absolute path to migration files directory
+
+  Example:  
+  `dumbo -user=%user -password=%password -url=postgresql://%host:%port/%database -location=%sourcePath migrate`
+
+  Default:  
+  `docker run --rm --net="host" -v %sourcePath:/migration rolang/dumbo:latest-alpine -user=%user -password=%password -url=postgresql://%host:%port/%database -table=%schemaHistoryTableName -location=/migration migrate`
 
 ## Output
 

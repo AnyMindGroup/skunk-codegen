@@ -28,10 +28,11 @@ import roach.codecs.*
 def run(args: String*) =
   given ExecutionContext = ExecutionContext.global
 
-  val argsMap = args.toList
-    .flatMap(_.split('=').map(_.trim().toLowerCase()))
-    .sliding(2, 2)
-    .collect { case a :: b :: _ => a -> b }
+  val argsMap = args
+    .map(arg =>
+      val (k, v) = arg.splitAt(arg.indexOf("="))
+      (k, v.stripPrefix("="))
+    )
     .toMap
 
   (for
@@ -52,6 +53,7 @@ def run(args: String*) =
     forceRegeneration = argsMap.get("-force") match
       case Some("1" | "true") => true
       case _                  => false
+    migrationCmd = argsMap.get("-migration-command")
   yield PgCodeGen.run(
     useDockerImage = useDockerImage,
     outputDir = outputDir,
@@ -61,7 +63,8 @@ def run(args: String*) =
     scalaVersion = scalaVersion,
     forceRegeneration = forceRegeneration,
     useConnectionUri = useConnectionUri,
-    debug = debug
+    debug = debug,
+    migrationCommand = migrationCmd
   )) match
     case Right(task) =>
       Await
@@ -91,7 +94,8 @@ class PgCodeGen private (
     database: String,
     schemaHistoryTableName: String,
     pkgDir: Path,
-    outDir: Path
+    outDir: Path,
+    migrationCommand: String
 )(using ExecutionContext) {
   import PgCodeGen.*
 
@@ -244,17 +248,14 @@ class PgCodeGen private (
       _ <- Future {
         println("Running migration...")
 
-        val cmd = List(
-          """docker run --rm --net="host"""",
-          s"-v ${sourceDir.getAbsolutePath()}:/migration",
-          "rolang/dumbo:latest-alpine",
-          s"-user=$user",
-          s"-password=$password",
-          s"-url=postgresql://$host:$port/$database",
-          s"-table=$schemaHistoryTableName",
-          "-location=/migration",
-          "migrate"
-        ).mkString(" ")
+        val cmd = migrationCommand
+          .replace("%sourcePath", sourceDir.getAbsolutePath().toString())
+          .replace("%user", user)
+          .replace("%password", password)
+          .replace("%port", port.toString())
+          .replace("%host", host)
+          .replace("%database", database)
+          .replace("%schemaHistoryTable", schemaHistoryTableName)
 
         if debug then println(s"Running migration with $cmd")
 
@@ -713,6 +714,19 @@ object PgCodeGen {
   case class UseDocker(dockerImage: String, dockerName: String)
   type UseConnection = URI | UseDocker
 
+  object defaults:
+    val dumboDockerMigrationCmd = List(
+      """docker run --rm --net="host"""",
+      "-v %sourcePath:/migration",
+      "rolang/dumbo:latest-alpine",
+      "-user=%user",
+      "-password=%password",
+      "-url=postgresql://%host:%port/%database",
+      "-table=%schemaHistoryTableName",
+      "-location=/migration",
+      "migrate"
+    ).mkString(" ")
+
   def run(
       useDockerImage: String,
       outputDir: File,
@@ -722,7 +736,8 @@ object PgCodeGen {
       scalaVersion: String,
       useConnectionUri: Option[URI],
       forceRegeneration: Boolean,
-      debug: Boolean
+      debug: Boolean,
+      migrationCommand: Option[String]
   )(using ExecutionContext): Future[List[File]] =
     val pkgDir = Paths.get(outputDir.getPath(), pkgName.replace('.', File.separatorChar))
     def outDir(sha1: String) = pkgDir / sha1
@@ -774,7 +789,8 @@ object PgCodeGen {
                 database = db.databaseName,
                 schemaHistoryTableName = schemaHistoryTableName,
                 pkgDir = pkgDir,
-                outDir = outDir(sha1)
+                outDir = outDir(sha1),
+                migrationCommand = migrationCommand.getOrElse(defaults.dumboDockerMigrationCmd)
               )
               files <- codegen
                 .run()
