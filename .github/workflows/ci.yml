@@ -22,9 +22,6 @@ jobs:
       - name: Install libpq (macOS)
         if: runner.os == 'macOS'
         run: brew install libpq && brew link --force libpq
-      - name: Install s2n and utf8proc
-        if: runner.os == 'ubuntu-latest'
-        run: /home/linuxbrew/.linuxbrew/bin/brew install s2n utf8proc
       - run: |
           OUT=out/codegen_$(uname -m)
           echo "Compiling to $OUT"
@@ -46,6 +43,8 @@ jobs:
       - uses: VirtusLab/scala-cli-setup@main
         with:
           jvm: temurin:21
+      - name: Install s2n and utf8proc
+        run: /home/linuxbrew/.linuxbrew/bin/brew install s2n utf8proc
       - run: ./test.sh
 
   publish-bin:
