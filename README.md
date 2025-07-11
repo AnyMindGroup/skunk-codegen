@@ -76,14 +76,16 @@ def skunkCodeGenTask(
 }
 ```
 
-**Key arguments:**
-- `-output-dir`: Output directory for generated Scala files
-- `-pkg-name`: Scala package name for generated code
-- `-source-dir`: Directory containing migration SQL files
-- `-use-docker-image`: (optional) Docker image for Postgres (default: postgres:17-alpine)
-- `-exclude-tables`: (optional) Comma-separated list of tables to exclude
-- `-force`: (optional) Force code generation (default: false)
-- `-scala-version`: (optional) Scala version (default: 3.7.1)
+**Command line arguments:**
+- `-output-dir` (required): Output directory for generated Scala files
+- `-pkg-name` (required): Scala package name for generated code
+- `-source-dir` (required): Directory containing migration SQL files
+- `-use-docker-image`: Docker image for Postgres (default: postgres:17-alpine)
+- `-use-connection`: Use a custom Postgres connection URI (overrides Docker)
+- `-exclude-tables`: Comma-separated list of tables to exclude
+- `-scala-version`: Scala version (default: 3.7.1)
+- `-debug`: Enable debug output (true/1 to enable)
+- `-force`: Force code generation, ignoring cache (true/1 to enable)
 
 ## Output
 
