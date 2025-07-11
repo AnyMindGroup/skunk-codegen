@@ -43,11 +43,7 @@ jobs:
       - uses: VirtusLab/scala-cli-setup@main
         with:
           jvm: temurin:21
-      - name: Install s2n and utf8proc
-        run: /home/linuxbrew/.linuxbrew/bin/brew install s2n utf8proc
       - run: ./test.sh
-        env:
-          LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/home/linuxbrew/.linuxbrew/lib
 
   publish-bin:
     name: Publish command line binaries
