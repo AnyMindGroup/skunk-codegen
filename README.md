@@ -19,7 +19,7 @@ Run the generator via command line:
 
 ```shell
 # download executable (for Linux / x86_64)
-curl https://github.com/AnyMindGroup/skunk-codegen/releases/download/latest/skunk-codegen-x86_64-linux > skunk_codegen && chmod +x skunk_codegen
+curl -L https://github.com/AnyMindGroup/skunk-codegen/releases/download/v0.2.0/skunk-codegen-x86_64-linux > skunk_codegen && chmod +x skunk_codegen
 
 # run code generator
 ./skunk_codegen \
