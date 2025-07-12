@@ -246,7 +246,7 @@ class PgCodeGen private (
   def run(): Future[List[File]] =
     for
       _ <- Future {
-        println("Running migration...")
+        if debug then println("Running migrations...")
 
         val sortedFiles = sourceFiles
           .map(p =>
