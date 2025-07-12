@@ -15,12 +15,13 @@ The code generator is based on [roach](https://github.com/indoorvivants/roach), 
 ## Usage
 
 Run the generator via command line:  
-(_Ensure `libpq` is installed on your system_)
+(_Ensure `libpq` and `docker` are installed on your system_)
 
 ```shell
 # download executable (for Linux / x86_64)
 curl https://github.com/AnyMindGroup/skunk-codegen/releases/download/latest/skunk-codegen-x86_64-linux > skunk_codegen && chmod +x skunk_codegen
 
+# run code generator
 ./skunk_codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=my/out/dir \
@@ -28,6 +29,17 @@ curl https://github.com/AnyMindGroup/skunk-codegen/releases/download/latest/skun
   -exclude-tables=table_name_a,table_name_b \
   -source-dir=path/to/db/migrations
 ```
+
+**Command line arguments:**
+- `-output-dir` (required): Output directory for generated Scala files
+- `-pkg-name` (required): Scala package name for generated code
+- `-source-dir` (required): Directory containing migration SQL files
+- `-use-docker-image`: Docker image for Postgres (default: postgres:17-alpine)
+- `-use-connection`: Use a custom Postgres connection URI (will not boot up a new Postgres Docker container if set)
+- `-exclude-tables`: Comma-separated list of tables to exclude
+- `-scala-version`: Scala version (default: 3.7.1)
+- `-debug`: Enable debug output (`true`/`1` to enable)
+- `-force`: Force code generation, ignoring cache (`true`/`1` to enable)
 
 #### Example usage of command line as source generator in [sbt](https://www.scala-sbt.org):
 
@@ -81,16 +93,6 @@ def skunkCodeGenTask(
 }
 ```
 
-**Command line arguments:**
-- `-output-dir` (required): Output directory for generated Scala files
-- `-pkg-name` (required): Scala package name for generated code
-- `-source-dir` (required): Directory containing migration SQL files
-- `-use-docker-image`: Docker image for Postgres (default: postgres:17-alpine)
-- `-use-connection`: Use a custom Postgres connection URI (overrides Docker)
-- `-exclude-tables`: Comma-separated list of tables to exclude
-- `-scala-version`: Scala version (default: 3.7.1)
-- `-debug`: Enable debug output (true/1 to enable)
-- `-force`: Force code generation, ignoring cache (true/1 to enable)
 
 ## Output
 
