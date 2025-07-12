@@ -1,6 +1,6 @@
 # skunk-codegen
 
-`skunk-codegen` is a Scala 3 code generator for PostgreSQL database schemas. It introspects your database and generates type-safe Scala code for use with the [skunk](https://tpolecat.github.io/skunk/) functional Postgres library.
+`skunk-codegen` is a Scala 3 code generator for PostgreSQL database schemas. It introspects your database and generates type-safe Scala code for use with the [skunk](https://typelevel.org/skunk) functional Postgres library.
 
 The code generator is based on [roach](https://github.com/indoorvivants/roach), an experimental Scala Native library for Postgres access using libpq and is shipped with a command line as native binary (~6MB).
 
