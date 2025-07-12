@@ -35,7 +35,8 @@ curl -L https://github.com/AnyMindGroup/skunk-codegen/releases/download/v0.2.0/s
 - `-pkg-name` (required): Scala package name for generated code
 - `-source-dir` (required): Directory containing migration SQL files
 - `-use-docker-image`: Docker image for Postgres (default: postgres:17-alpine)
-- `-use-connection`: Use a custom Postgres connection URI (will not boot up a new Postgres Docker container if set)
+- `-use-connection`: Use a custom Postgres connection URI.  
+  Will not boot up a new Postgres Docker container if set, but create a new database with a random name to use for code generation.
 - `-exclude-tables`: Comma-separated list of tables to exclude
 - `-scala-version`: Scala version (default: 3.7.1)
 - `-debug`: Enable debug output (`true`/`1` to enable)
