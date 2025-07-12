@@ -554,7 +554,7 @@ class PgCodeGen private (
         s")$withUpdateStr",
         "",
         s"object $rowClassName {",
-        s"  implicit val codec: Codec[$rowClassName] = ($codecData).to[$rowClassName]",
+        s"  given codec: Codec[$rowClassName] = ($codecData).to[$rowClassName]",
         "}",
         s"${rowUpdateClassData._2.mkString("\n")}"
       ).mkString("\n")
