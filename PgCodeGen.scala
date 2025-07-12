@@ -265,7 +265,9 @@ class PgCodeGen private (
           )(db =>
             sortedFiles.foreach: path =>
               if debug then println(s"Running migration for $path")
-              db.execute(Files.readString(path)).getOrThrow
+              db.execute(Files.readString(path)).either match
+                case Left(err) => throw err
+                case _         => ()
           )
       }
       enums <- getEnums
