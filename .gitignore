@@ -15,5 +15,6 @@ target/
 .vscode/
 .bloop/
 metals.sbt
-modules/core/src/test/scala-*/com/anymindgroup/generated/
-modules/core/src/test/scala-*/com/anymindgroup/GeneratedCodeTest.scala
+test-generated
+.scala-build/
+out

@@ -8,55 +8,60 @@ concurrency:
   group: ${{ github.workflow }} @ ${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: coursier/cache-action@v6
+      - uses: VirtusLab/scala-cli-setup@main
+        with:
+          jvm: temurin:21
+      - name: Install libpq (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libpq && brew link --force libpq
+      - run: |
+          OUT=out/skunk-codegen-$(uname -m)-$(uname | tr '[:upper:]' '[:lower:]')
+          echo "Compiling to $OUT"
+          scala-cli --power package \
+            --native \
+            --native-mode release-fast PgCodeGen.scala \
+            -o $OUT -f && \
+          zip -j "${OUT}.zip" $OUT
+      - name: Upload command line binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: codegen-bin-${{ matrix.os }}
+          path: out/*
   test:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Setup JDK
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: 21
-        cache: sbt
-    - name: Start up Postgres
-      run: docker run --rm -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16-alpine
-    - name: Generate code
-      run: sbt '+core/Test/runMain com.anymindgroup.RunPgCodeGen'
-    - name: Test generated code
-      run: sbt '++2.13 Test/runMain com.anymindgroup.GeneratedCodeTest; ++3.3 Test/runMain com.anymindgroup.GeneratedCodeTest'
-    - name: Test sbt plugin
-      # for sbt < v2 which only supports scala 2.12
-      run: sbt ++2.12 scripted
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    continue-on-error: false
-    needs:
-    - test
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      - uses: actions/checkout@v2
+      - uses: coursier/cache-action@v6
+      - uses: VirtusLab/scala-cli-setup@main
+        with:
+          jvm: temurin:21
+      - run: ./test.sh
+
+  publish-bin:
+    name: Publish command line binaries
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-    - name: Git Checkout
-      uses: actions/checkout@v4
-    - name: Setup JDK
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: 21
-        cache: sbt
-    - name: Import signing key and strip passphrase
-      if: env.PGP_SECRET != '' && env.PGP_PASSPHRASE != ''
-      env:
-        PGP_SECRET: ${{ secrets.PGP_SECRET }}
-        PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
-      run: |
-        echo "$PGP_SECRET" | base64 -d -i - > /tmp/signing-key.gpg
-        echo "$PGP_PASSPHRASE" | gpg --pinentry-mode loopback --passphrase-fd 0 --import /tmp/signing-key.gpg
-        (echo "$PGP_PASSPHRASE"; echo; echo) | gpg --command-fd 0 --pinentry-mode loopback --change-passphrase $(gpg --list-secret-keys --with-colons 2> /dev/null | grep '^sec:' | cut --delimiter ':' --fields 5 | tail -n 1)
-    - name: Release
-      run: sbt '++2.12 publishSigned; sonatypeCentralRelease'
-      env:
-        PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
-        PGP_SECRET: ${{ secrets.PGP_SECRET }}
-        SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
-        SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+      - name: Download command line binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: codegen-bin-*
+          path: out
+          merge-multiple: true
+
+      - name: Upload release binaries
+        uses: softprops/action-gh-release@v1
+        with:
+          files: out/*
