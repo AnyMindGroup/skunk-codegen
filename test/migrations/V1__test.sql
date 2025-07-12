@@ -40,7 +40,7 @@ CREATE TABLE test_ref_pk (
   ref_name VARCHAR NOT NULL
 );
 
-CREATE MATERIALIZED VIEW public.test_materialized_view AS SELECT id,
+CREATE MATERIALIZED VIEW test_materialized_view AS SELECT id,
     created_at,
     name,
     name_2,
@@ -48,7 +48,7 @@ CREATE MATERIALIZED VIEW public.test_materialized_view AS SELECT id,
    FROM test WITH DATA;
 
 
-CREATE VIEW public.test_view AS SELECT id,
+CREATE VIEW test_view AS SELECT id,
     created_at,
     name,
     name_2,

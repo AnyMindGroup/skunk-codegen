@@ -26,8 +26,6 @@ import roach.codecs.*
 
 @main
 def run(args: String*) =
-  given ExecutionContext = ExecutionContext.global
-
   (for
     argsMap <-
       try
@@ -57,7 +55,6 @@ def run(args: String*) =
     forceRegeneration = argsMap.get("-force") match
       case Some("1" | "true") => true
       case _                  => false
-    migrationCmd = argsMap.get("-migration-command")
     _ = if debug then println(s"Running code generator with arguments: ${args.mkString(", ")}")
   yield PgCodeGen.run(
     useDockerImage = useDockerImage,
@@ -68,9 +65,8 @@ def run(args: String*) =
     scalaVersion = scalaVersion,
     forceRegeneration = forceRegeneration,
     useConnectionUri = useConnectionUri,
-    debug = debug,
-    migrationCommand = migrationCmd
-  )) match
+    debug = debug
+  )(using ExecutionContext.global)) match
     case Right(task) =>
       try
         Await.result(task, 30.seconds)
@@ -89,7 +85,7 @@ case class Type(name: String, componentTypes: List[Type] = Nil)
 
 class PgCodeGen private (
     pkgName: String,
-    sourceDir: File,
+    sourceFiles: List[Path],
     excludeTables: List[String],
     debug: Boolean,
     user: String,
@@ -99,8 +95,7 @@ class PgCodeGen private (
     database: String,
     schemaHistoryTableName: String,
     pkgDir: Path,
-    outDir: Path,
-    migrationCommand: String
+    outDir: Path
 )(using ExecutionContext) {
   import PgCodeGen.*
 
@@ -253,20 +248,25 @@ class PgCodeGen private (
       _ <- Future {
         println("Running migration...")
 
-        val cmd = migrationCommand
-          .replace("%sourcePath", sourceDir.getAbsolutePath().toString())
-          .replace("%user", user)
-          .replace("%password", password)
-          .replace("%port", port.toString())
-          .replace("%host", host)
-          .replace("%database", database)
-          .replace("%schemaHistoryTable", schemaHistoryTableName)
+        val sortedFiles = sourceFiles
+          .map(p =>
+            MigrationVersion.fromFileName(p.getFileName().toString()) match
+              case Right(v)  => p -> v
+              case Left(err) => throw Throwable(s"Invalid migration file name: $err")
+          )
+          .sortBy((_, version) => version)
+          .map((path, _) => path)
 
-        if debug then println(s"Running migration with $cmd")
-
-        cmd ! (ProcessLogger(out => if debug then println(out) else (), err => Console.err.println(err))) match
-          case 0       => ()
-          case nonZero => throw Throwable(s"Migration exited with non zero code: $nonZero")
+        Zone:
+          Using(
+            Database(connectionString).either match
+              case Left(err) => throw err
+              case Right(db) => db
+          )(db =>
+            sortedFiles.foreach: path =>
+              if debug then println(s"Running migration for $path")
+              db.execute(Files.readString(path)).getOrThrow
+          )
       }
       enums <- getEnums
       tables <- getColumns(enums)
@@ -741,8 +741,7 @@ object PgCodeGen {
       scalaVersion: String,
       useConnectionUri: Option[URI],
       forceRegeneration: Boolean,
-      debug: Boolean,
-      migrationCommand: Option[String]
+      debug: Boolean
   )(using ExecutionContext): Future[List[File]] =
     val pkgDir = Paths.get(outputDir.getPath(), pkgName.replace('.', File.separatorChar))
     def outDir(sha1: String) = pkgDir / sha1
@@ -763,6 +762,7 @@ object PgCodeGen {
           if !Files.isDirectory(path) then digest.update(Files.readAllBytes(path))
           path
         )
+        .filter(!Files.isDirectory(_))
 
       (files, digest.digest().map("%02x".format(_)).mkString)
 
@@ -784,7 +784,7 @@ object PgCodeGen {
               db <- initGeneratorDatabase(useConnection)
               codegen = PgCodeGen(
                 pkgName = pkgName,
-                sourceDir = sourceDir,
+                sourceFiles = sourceFiles,
                 excludeTables = excludeTables,
                 debug = debug,
                 user = db.user,
@@ -794,8 +794,7 @@ object PgCodeGen {
                 database = db.databaseName,
                 schemaHistoryTableName = schemaHistoryTableName,
                 pkgDir = pkgDir,
-                outDir = outDir(sha1),
-                migrationCommand = migrationCommand.getOrElse(defaults.dumboDockerMigrationCmd)
+                outDir = outDir(sha1)
               )
               files <- codegen
                 .run()
@@ -883,6 +882,42 @@ object PgCodeGen {
           ).mkString(" ").!!
         ).flatMap(_ => awaitReadiness(s"postgresql://$user:$password@$host:$port/$databaseName"))
   end initGeneratorDatabase
+
+  enum MigrationVersion:
+    def compare(that: MigrationVersion): Int = {
+      @tailrec
+      def cmprVersioned(a: List[Int], b: List[Int]): Int =
+        (a, b) match {
+          case (xa :: xsa, xb :: xsb) if xa == xb => cmprVersioned(xsa, xsb)
+          case (xa :: _, xb :: _)                 => xa.compare(xb)
+          case (xa :: _, Nil)                     => xa.compare(0)
+          case (Nil, xb :: _)                     => xb.compare(0)
+          case (Nil, Nil)                         => 0
+        }
+
+      (this, that) match {
+        case (_: Repeatable, _: Versioned)                => 1
+        case (_: Versioned, _: Repeatable)                => -1
+        case (Repeatable(descThis), Repeatable(descThat)) => descThis.compare(descThat)
+        case (Versioned(thisParts), Versioned(thatParts)) => cmprVersioned(thisParts, thatParts)
+      }
+    }
+    case Versioned(parts: List[Int])
+    case Repeatable(name: String)
+
+  object MigrationVersion:
+    private val versioned = "^V([^_]+)__(.+)\\.sql$".r
+    private val repeatable = "^R__(.+)\\.sql$".r
+
+    given Ordering[MigrationVersion] with
+      def compare(x: MigrationVersion, y: MigrationVersion): Int = x.compare(y)
+
+    def fromFileName(name: String): Either[String, MigrationVersion] = name match
+      case versioned(version, name) =>
+        try Right(MigrationVersion.Versioned(version.split('.').map(_.toInt).toList))
+        catch case e: Throwable => Left(s"Invalid version $version: ${e.getMessage()}")
+      case repeatable(n) => Right(MigrationVersion.Repeatable(n))
+      case other         => Left(s"Invalid file name $other")
 
   private def listFilesRec(path: Path): List[Path] =
     import scala.jdk.CollectionConverters.*
@@ -1002,12 +1037,12 @@ object PgCodeGen {
     escapeScalaKeywords(toCamelCase(s))
 
   def escapeScalaKeywords(v: String): String =
-    v match {
-      case "type"   => "`type`"
-      case "import" => "`import`"
-      case "val"    => "`val`" // add more as required
-      case v        => v
-    }
+    v match
+      case "type"                => "`type`"
+      case "import"              => "`import`"
+      case "val"                 => "`val`" // add more as required
+      case v if !v.head.isLetter => s"`$v`"
+      case v                     => v
 
   def toCamelCase(s: String, capitalize: Boolean = false): String =
     s.split("_")

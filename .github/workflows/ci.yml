@@ -23,7 +23,7 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install libpq && brew link --force libpq
       - run: |
-          OUT=out/codegen_$(uname -m)
+          OUT=out/skunk-codegen-$(uname -m)-$(uname | tr '[:upper:]' '[:lower:]')
           echo "Compiling to $OUT"
           scala-cli --power package \
             --native \

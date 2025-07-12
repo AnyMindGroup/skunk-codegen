@@ -2,13 +2,14 @@
 set -e
 
 # generate binary
+CODEGEN_BIN=out/skunk-codegen-$(uname -m)-$(uname | tr '[:upper:]' '[:lower:]')
 scala-cli --power package \
   --native \
   --native-mode release-fast PgCodeGen.scala \
-  -o out/codegen -f
+  -o $CODEGEN_BIN -f
 
 echo "⏳Test generated code"
-./out/codegen \
+$CODEGEN_BIN \
   -use-docker-image=postgres:17-alpine \
   -output-dir=test-generated \
   -pkg-name=generated \
@@ -23,7 +24,7 @@ scala-cli run PgCodeGenTest.scala
 echo "✅ Test of generated code successful"
 
 echo "⏳running generator again with -force=true should re-run code generation"
-./out/codegen \
+./$CODEGEN_BIN \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
@@ -41,7 +42,7 @@ else
 fi
 
 echo "⏳ running generator again with -force=false should not run code generation"
-./out/codegen \
+./$CODEGEN_BIN \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
@@ -61,7 +62,7 @@ fi
 echo "⏳ running code generator with provided connection"
 docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d postgres:17-alpine
 
-(./out/codegen \
+(./$CODEGEN_BIN \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=test-generated \
   -pkg-name=generated \
@@ -69,18 +70,5 @@ docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d
   -source-dir=test/migrations \
   -use-connection=postgresql://postgres:postgres@localhost:5555/postgres \
   -force=true && echo "✅ Code generation for provided connection ok.") || (docker rm -f codegentest; exit 1)
-
-# run manually for now
-# echo "⏳ Running code generator with custom migrations command"
-# (./out/codegen \
-#   -use-docker-image="postgres:17-alpine" \
-#   -output-dir=test-generated \
-#   -pkg-name=generated \
-#   -exclude-tables=unsupported_yet \
-#   -source-dir=test/migrations \
-#   -migration-command="./test/dumbo -user=%user -password=%password -url=postgresql://%host:%port/%database -location=%sourcePath migrate" \
-#   -debug=1 \
-#   -use-connection=postgresql://postgres:postgres@localhost:5555/postgres \
-#   -force=true && echo "✅ Code generation with custom migration command ok.") || (docker rm -f codegentest; exit 1)
 
 docker rm -f codegentest

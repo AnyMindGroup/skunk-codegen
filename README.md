@@ -2,20 +2,26 @@
 
 `skunk-codegen` is a Scala 3 code generator for PostgreSQL database schemas. It introspects your database and generates type-safe Scala code for use with the [skunk](https://tpolecat.github.io/skunk/) functional Postgres library.
 
+The code generator is based on [roach](https://github.com/indoorvivants/roach), an experimental Scala Native library for Postgres access using libpq and is shipped with a command line as native binary (~6MB).
+
 ## Features
 
 - **Schema Introspection:** Reads tables, columns, constraints (primary, unique, foreign keys), indexes, and enums from a PostgreSQL database.
 - **Code Generation:** Produces Scala case classes, codecs, and table definitions for each table and enum in your schema.
-- **Migration Support:** Runs database migrations using dockerized version of [dumbo](https://github.com/rolang/dumbo) before code generation.
+- **Migration Support:** Runs Flyway compatible database migrations.
 - **Docker Integration:** Can spin up a PostgreSQL Docker container for isolated code generation.
 - **Customizable:** Supports excluding tables, specifying output/source directories, and customizing package names.
 
 ## Usage
 
-Run the generator via command line:
+Run the generator via command line:  
+(_Ensure `libpq` is installed on your system_)
 
 ```shell
-./path/to/codegen_x86_64 \
+# download executable (for Linux / x86_64)
+curl https://github.com/AnyMindGroup/skunk-codegen/releases/download/latest/skunk-codegen-x86_64-linux > skunk_codegen && chmod +x skunk_codegen
+
+./skunk_codegen \
   -use-docker-image="postgres:17-alpine" \
   -output-dir=my/out/dir \
   -pkg-name=my.package \
@@ -23,7 +29,7 @@ Run the generator via command line:
   -source-dir=path/to/db/migrations
 ```
 
-Example usage of command line in sbt:
+#### Example usage of command line as source generator in [sbt](https://www.scala-sbt.org):
 
 ```scala
 lazy val myProject = (project in file("."))
@@ -48,7 +54,7 @@ def skunkCodeGenTask(
   val outPkgDir = outDir / pkgName.split('.').mkString(java.io.File.separator)
 
   val cmd = List(
-    "./path/to/codegen_x86_64",
+    "./path/to/skunk_codegen",
     s"-output-dir=${outDir.getPath()}",
     s"-pkg-name=$pkgName",
     s"-source-dir=${migrationsDir.getPath()}",
@@ -56,7 +62,7 @@ def skunkCodeGenTask(
     "-force=false",
   ).mkString(" ")
 
-  logger.debug(cmd)
+  logger.debug(s"Running skunk code generator with: $cmd")
 
   val errs = scala.collection.mutable.ListBuffer.empty[String]
   cmd ! ProcessLogger(i => logger.info(s"[Skunk codegen] $i"), e => errs += e) match {
@@ -85,20 +91,6 @@ def skunkCodeGenTask(
 - `-scala-version`: Scala version (default: 3.7.1)
 - `-debug`: Enable debug output (true/1 to enable)
 - `-force`: Force code generation, ignoring cache (true/1 to enable)
-- `-migration-command` : Custom command line to run for migrations.
-  Available placeholders that can be used for the command:  
-  - `%user` Postgres user 
-  - `%password` Postgres password
-  - `%host` Postgres host
-  - `%port` Postgres port
-  - `%database` Postgres database
-  - `%sourcePath` Absolute path to migration files directory
-
-  Example:  
-  `dumbo -user=%user -password=%password -url=postgresql://%host:%port/%database -location=%sourcePath migrate`
-
-  Default:  
-  `docker run --rm --net="host" -v %sourcePath:/migration rolang/dumbo:latest-alpine -user=%user -password=%password -url=postgresql://%host:%port/%database -table=%schemaHistoryTableName -location=/migration migrate`
 
 ## Output
 
