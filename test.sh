@@ -59,6 +59,24 @@ else
   exit 1
 fi
 
+echo "⏳ running generator again with additional non-sql file and -force=false should not run code generation"
+./$CODEGEN_BIN \
+  -use-docker-image="postgres:17-alpine" \
+  -output-dir=test-generated \
+  -pkg-name=generated \
+  -exclude-tables=unsupported_yet \
+  -source-dir=test/migrations_copy \
+  -force=false
+
+TIMESTAMP_D=$(stat test-generated | grep Modify)
+
+if [ "$TIMESTAMP_B" == "$TIMESTAMP_D" ]; then
+  echo "✅ Code generation with additional non-sql file and -force=false as expected (timestamps are the same)"
+else
+  echo "❌ Error: Code generation with additional non-sql file and -force=false not as expected (timestamps differ)"
+  exit 1
+fi
+
 echo "⏳ running code generator with provided connection"
 docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d postgres:17-alpine
 
