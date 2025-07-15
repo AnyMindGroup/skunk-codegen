@@ -786,7 +786,6 @@ object PgCodeGen {
                 if sourceFiles.isEmpty then
                   Future.failed(Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
                 else Future.unit
-              _ = if debug && isDivergent then println(s"No generated files found in ${outDir(sha1)}")
               _ = println("Generating Postgres models")
               db <- initGeneratorDatabase(useConnection)
               codegen = PgCodeGen(
