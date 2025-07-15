@@ -760,7 +760,6 @@ object PgCodeGen {
         .collect { case Some(v) => v }
         .sortBy((_, version) => version)
         .map((path, _) =>
-          digest.update(path.toString.getBytes("UTF-8"))
           digest.update(Files.readAllBytes(path))
           path
         )
