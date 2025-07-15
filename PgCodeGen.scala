@@ -248,22 +248,13 @@ class PgCodeGen private (
       _ <- Future {
         if debug then println("Running migrations...")
 
-        val sortedFiles = sourceFiles
-          .map(p =>
-            MigrationVersion.fromFileName(p.getFileName().toString()) match
-              case Right(v)  => p -> v
-              case Left(err) => throw Throwable(s"Invalid migration file name: $err")
-          )
-          .sortBy((_, version) => version)
-          .map((path, _) => path)
-
         Zone:
           Using(
             Database(connectionString).either match
               case Left(err) => throw err
               case Right(db) => db
           )(db =>
-            sortedFiles.foreach: path =>
+            sourceFiles.foreach: path =>
               if debug then println(s"Running migration for $path")
               db.execute(Files.readString(path)).either match
                 case Left(err) => throw err
@@ -759,12 +750,20 @@ object PgCodeGen {
     def listMigrationFiles: Future[(List[Path], String)] = Future:
       val digest = MessageDigest.getInstance("SHA-1")
       val files = listFilesRec(sourceDir.toPath)
-        .map(path =>
+        .filter(!Files.isDirectory(_))
+        .map(p =>
+          MigrationVersion.fromFileName(p.getFileName().toString()) match
+            case Right(v)                       => Some(p -> v)
+            case Left(_) if !p.endsWith(".sql") => None // ignore non .sql files
+            case Left(err)                      => throw Throwable(s"Invalid migration file name: $err")
+        )
+        .collect { case Some(v) => v }
+        .sortBy((_, version) => version)
+        .map((path, _) =>
           digest.update(path.toString.getBytes("UTF-8"))
-          if !Files.isDirectory(path) then digest.update(Files.readAllBytes(path))
+          digest.update(Files.readAllBytes(path))
           path
         )
-        .filter(!Files.isDirectory(_))
 
       (files, digest.digest().map("%02x".format(_)).mkString)
 
@@ -775,13 +774,20 @@ object PgCodeGen {
     else
       listMigrationFiles.flatMap:
         case (sourceFiles, sha1) =>
+          if debug then println(s"Found ${sourceFiles.length} migration files (SHA1: $sha1)")
+
           val isDivergent = !Files.exists(outDir(sha1))
+
+          if debug && isDivergent then
+            println(s"No generated files found in: ${outDir(sha1).toAbsolutePath().toString()}")
+
           if forceRegeneration || isDivergent then
             for
               _ <-
                 if sourceFiles.isEmpty then
                   Future.failed(Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
                 else Future.unit
+              _ = if debug && isDivergent then println(s"No generated files found in ${outDir(sha1)}")
               _ = println("Generating Postgres models")
               db <- initGeneratorDatabase(useConnection)
               codegen = PgCodeGen(
