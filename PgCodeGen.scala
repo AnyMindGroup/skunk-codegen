@@ -245,7 +245,7 @@ class PgCodeGen private (
 
   def run(): Future[List[File]] =
     for
-      _ <- Future {
+      _ <- Future.fromTry {
         if debug then println("Running migrations...")
 
         Zone:
