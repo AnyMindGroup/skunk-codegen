@@ -92,10 +92,15 @@ docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d
 docker rm -f codegentest
 
 echo "⏳Process should fail on running invalid sql"
-($CODEGEN_BIN \
+if $CODEGEN_BIN \
   -use-docker-image=postgres:17-alpine \
   -output-dir=test-generated \
   -pkg-name=generated \
   -exclude-tables=unsupported_yet \
   -source-dir=test/migrations_invalid \
-  -force=true && echo "❌ Process not failed as expected"; exit 1) || echo "✅ Process failed as expected"
+  -force=true; then
+  echo "❌ Process did not fail as expected"
+  exit 1
+else
+  echo "✅ Process failed as expected"
+fi
