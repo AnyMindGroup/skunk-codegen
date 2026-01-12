@@ -3,9 +3,9 @@ set -e
 
 # generate binary
 CODEGEN_BIN=out/skunk-codegen-$(uname -m)-$(uname | tr '[:upper:]' '[:lower:]')
-scala-cli --power package \
+scala --power package \
   --native \
-  --native-mode release-fast PgCodeGen.scala \
+  --native-mode release-fast PgCodeGen.scala -source:future -Werror \
   -o $CODEGEN_BIN -f
 
 echo "⏳Test generated code"
@@ -20,7 +20,7 @@ $CODEGEN_BIN \
 TIMESTAMP_A=$(stat test-generated | grep Modify)
 
 # run test for generated code
-scala-cli run PgCodeGenTest.scala
+scala run PgCodeGenTest.scala -source:future -Werror
 echo "✅ Test of generated code successful"
 
 echo "⏳running generator again with -force=true should re-run code generation"
@@ -87,7 +87,10 @@ docker run --rm --name codegentest -e POSTGRES_PASSWORD=postgres -p 5555:5432 -d
   -exclude-tables=unsupported_yet \
   -source-dir=test/migrations \
   -use-connection=postgresql://postgres:postgres@localhost:5555/postgres \
-  -force=true && echo "✅ Code generation for provided connection ok.") || (docker rm -f codegentest; exit 1)
+  -force=true && echo "✅ Code generation for provided connection ok.") || (
+  docker rm -f codegentest
+  exit 1
+)
 
 docker rm -f codegentest
 

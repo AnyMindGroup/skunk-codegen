@@ -1,5 +1,5 @@
-//> using scala 3.7.1
-//> using dep dev.rolang::dumbo:0.5.5
+//> using scala 3.7.4
+//> using dep dev.rolang::dumbo:0.6.1
 //> using platform jvm
 //> using jvm system
 //> using file test-generated/generated
@@ -16,10 +16,12 @@ import cats.effect.{ExitCode, IO, IOApp}
 import cats.effect.std.Console
 import cats.implicits.*
 import dumbo.ConnectionConfig
+import dumbo.logging.Implicits.console
 import fs2.io.file.Path
 import generated.*
 import org.typelevel.otel4s.trace.Tracer.Implicits.noop
 import skunk.*
+import skunk.Session.Credentials
 import skunk.codec.all.*
 import skunk.implicits.*
 import skunk.util.{Origin, Typer}
@@ -44,14 +46,13 @@ object GeneratedCodeTest extends IOApp {
       _ <- awaitReadiness(testDbPort)
       _ <- migrate(testDbPort)
       _ <- Session
-        .single[IO](
-          host = "localhost",
-          port = testDbPort,
-          user = "postgres",
-          database = "postgres",
-          password = Some("postgres"),
-          strategy = Typer.Strategy.SearchPath // to include custom types like enums,
-        )
+        .Builder[IO]
+        .withHost("localhost")
+        .withPort(testDbPort)
+        .withDatabase("postgres")
+        .withCredentials(Credentials(user = "postgres", password = Some("postgres")))
+        .withTypingStrategy(skunk.TypingStrategy.SearchPath)
+        .single
         .use { s =>
           val (testRow, testUpdateFr) = TestRow(
             number = Some(1),

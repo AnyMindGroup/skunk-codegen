@@ -1,8 +1,8 @@
-//> using scala 3.7.1
+//> using scala 3.7.4
 //> using dep com.indoorvivants.roach::core::0.1.0
 //> using dep com.github.lolgab::scala-native-crypto::0.2.1
 //> using platform native
-//> using nativeVersion 0.5.8
+//> using nativeVersion 0.5.9
 
 package com.anymindgroup
 
@@ -140,9 +140,9 @@ class PgCodeGen private (
   ): Type =
     (udt, maxCharLength, numPrecision, numScale) match {
       case (u @ ("bpchar" | "varchar"), Some(l), _, _) => Type(s"$u($l)")
-      case ("numeric", _, Some(p), Some(s))            => Type(s"numeric($p${if (s > 0) ", " + s.toString else ""})")
+      case ("numeric", _, Some(p), Some(s))            => Type(s"numeric($p${if s > 0 then ", " + s.toString else ""})")
       case _                                           =>
-        val componentTypes = if (udt.startsWith("_")) List(Type(udt.stripPrefix("_"))) else Nil
+        val componentTypes = if udt.startsWith("_") then List(Type(udt.stripPrefix("_"))) else Nil
         Type(udt, componentTypes)
     }
 
@@ -451,12 +451,12 @@ class PgCodeGen private (
         ).collectFirst {
           // check by type name without a max length parameter if set, e.g. vacrhar instead of varchar(3)
           case (scalaType, pgTypes) if pgTypes.contains(t.name.takeWhile(_ != '(')) =>
-            if (isNullable) s"Option[$scalaType]" else scalaType
+            if isNullable then s"Option[$scalaType]" else scalaType
         }.orElse {
-          enums.find(_.name == t.name).map(e => if (isNullable) s"Option[${e.scalaName}]" else e.scalaName)
+          enums.find(_.name == t.name).map(e => if isNullable then s"Option[${e.scalaName}]" else e.scalaName)
         }.toRight(s"No scala type found for type ${t.name}")
       case x :: Nil =>
-        toScalaType(x, isNullable = false, enums).map(t => if (isNullable) s"Option[List[$t]]" else s"List[$t]")
+        toScalaType(x, isNullable = false, enums).map(t => if isNullable then s"Option[List[$t]]" else s"List[$t]")
       case x :: xs =>
         Left(s"Unsupported type of multiple components: ${x :: xs}")
     }
@@ -484,7 +484,7 @@ class PgCodeGen private (
     }
 
     val rowUpdateClassData =
-      if (table.isView) (Nil, Nil)
+      if table.isView then (Nil, Nil)
       else
         primaryUniqueConstraint match {
           case Some(cstr) =>
@@ -583,7 +583,7 @@ class PgCodeGen private (
   private def queryTypesStr(table: Table): (String, String) = {
     import table.*
 
-    if (autoIncFk.isEmpty) {
+    if autoIncFk.isEmpty then {
       (rowClassName, s"${rowClassName}.codec")
     } else {
       val autoIncFkCodecs = autoIncFk.map(_.codecName).mkString(" *: ")
@@ -593,7 +593,7 @@ class PgCodeGen private (
   }
 
   private def writeStatements(table: Table): String =
-    if (table.isView) ""
+    if table.isView then ""
     else {
       import table.*
 
@@ -607,7 +607,7 @@ class PgCodeGen private (
       }
       val returningType = generatedColumns
         .map(_.scalaType)
-        .mkString("", " *: ", if (generatedColumns.length > 1) " *: EmptyTuple" else "")
+        .mkString("", " *: ", if generatedColumns.length > 1 then " *: EmptyTuple" else "")
       val fragmentType = generatedColumns match {
         case Nil => "command"
         case _   => s"query(${generatedColumns.map(_.codecName).mkString(" *: ")})"
@@ -631,7 +631,7 @@ class PgCodeGen private (
       }
       val insertQ =
         s"""|  def insertQuery(ignoreConflict: Boolean = true): $queryType = {
-            |    val onConflictFr = if (ignoreConflict) const" ON CONFLICT DO NOTHING" else const""
+            |    val onConflictFr = if ignoreConflict then const" ON CONFLICT DO NOTHING" else const""
             |    sql\"INSERT INTO #$$tableName ($allColNames) VALUES ($${$insertCodec})$$onConflictFr$returningStatement\".$fragmentType
             |  }""".stripMargin
 
@@ -640,7 +640,7 @@ class PgCodeGen private (
             |  def insert[A](cols: Cols[A]): Command[A] =
             |    sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec})\".command
             |
-            |  def insert0[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING")(implicit
+            |  def insert0[A, B](cols: Cols[A], rest: Fragment[B] = sql"ON CONFLICT DO NOTHING")(using
             |    ev: Void =:= B
             |  ): Command[A] =
             |    (sql\"INSERT INTO #$$tableName (#$${cols.name}) VALUES ($${cols.codec}) " ~ rest).command.contramap[A](a => (a, ev.apply(Void)))
@@ -678,7 +678,7 @@ class PgCodeGen private (
   private def selectAllStatement(table: Table): String = {
     import table.*
 
-    val generatedColStm = if (generatedColumns.nonEmpty) {
+    val generatedColStm = if generatedColumns.nonEmpty then {
       val types = generatedColumns.map(_.codecName).mkString(" *: ")
       val sTypes = generatedColumns.map(_.scalaType).mkString(" *: ")
       val colNamesStr = (generatedColumns ++ columns).map(_.columnName).mkString(", ")
@@ -915,7 +915,7 @@ object PgCodeGen {
     private val versioned = "^V([^_]+)__(.+)\\.sql$".r
     private val repeatable = "^R__(.+)\\.sql$".r
 
-    given Ordering[MigrationVersion] with
+    given Ordering[MigrationVersion]:
       def compare(x: MigrationVersion, y: MigrationVersion): Int = x.compare(y)
 
     def fromFileName(name: String): Either[String, MigrationVersion] = name match
@@ -972,9 +972,9 @@ object PgCodeGen {
 
     val codecName: String =
       (
-        (if (isEnum) s"${toScalaName(pgType.name).capitalize}.codec" else s"skunk.codec.all.${pgType.name}") +
-          (if (isArr) "._list" else "") +
-          (if (isNullable) ".opt" else "")
+        (if isEnum then s"${toScalaName(pgType.name).capitalize}.codec" else s"skunk.codec.all.${pgType.name}") +
+          (if isArr then "._list" else "") +
+          (if isNullable then ".opt" else "")
       )
   }
 
@@ -985,7 +985,7 @@ object PgCodeGen {
     case object AutoInc extends ColumnDefault
 
     def fromString(value: String): Option[ColumnDefault] =
-      if (value.contains("nextval")) Some(AutoInc) else None
+      if value.contains("nextval") then Some(AutoInc) else None
   }
   sealed trait Constraint {
     def name: String
