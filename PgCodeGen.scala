@@ -787,7 +787,9 @@ object PgCodeGen {
                   Future.failed(Exception(s"Cannot find any .sql files in ${sourceDir.toPath()}"))
                 else Future.unit
               _ = println("Generating Postgres models")
-              db <- initGeneratorDatabase(useConnection)
+              db <- initGeneratorDatabase(useConnection).transformWith:
+                case Success(db)  => Future.successful(db)
+                case Failure(err) => cleanup.flatMap(_ => Future.failed(err))
               codegen = PgCodeGen(
                 pkgName = pkgName,
                 sourceFiles = sourceFiles,
