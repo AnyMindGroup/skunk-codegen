@@ -1,8 +1,8 @@
-//> using scala 3.7.4
+//> using scala 3.8.3
 //> using dep com.indoorvivants.roach::core::0.1.0
-//> using dep com.github.lolgab::scala-native-crypto::0.2.1
+//> using dep com.github.lolgab::scala-native-crypto::0.3.0
 //> using platform native
-//> using nativeVersion 0.5.9
+//> using nativeVersion 0.5.10
 
 package com.anymindgroup
 
@@ -853,7 +853,7 @@ object PgCodeGen {
                 val res = sql"SELECT true".one(bool).contains(true)
         } catch {
           case e: Throwable =>
-            if attempt <= 10 then check(attempt + 1)
+            if attempt <= 50 then check(attempt + 1)
             else
               Console.err.println(s"Could not connect to docker on $host:$port ${e.getMessage()}")
               throw e

@@ -1,5 +1,5 @@
-//> using scala 3.7.4
-//> using dep dev.rolang::dumbo:0.6.1
+//> using scala 3.8.3
+//> using dep dev.rolang::dumbo:0.8.1
 //> using platform jvm
 //> using jvm system
 //> using file test-generated/generated
