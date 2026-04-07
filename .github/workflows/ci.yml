@@ -19,6 +19,9 @@ jobs:
       - uses: VirtusLab/scala-cli-setup@main
         with:
           jvm: temurin:21
+      - name: Install libpq (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y libpq-dev
       - name: Install libpq (macOS)
         if: runner.os == 'macOS'
         run: brew install libpq && brew link --force libpq
