@@ -1,8 +1,8 @@
-//> using scala 3.8.3
+//> using scala 3.9.0
 //> using dep com.indoorvivants.roach::core::0.1.0
-//> using dep com.github.lolgab::scala-native-crypto::0.3.0
+//> using dep com.github.lolgab::scala-native-crypto::0.4.0
 //> using platform native
-//> using nativeVersion 0.5.10
+//> using nativeVersion 0.5.12
 
 package com.anymindgroup
 
