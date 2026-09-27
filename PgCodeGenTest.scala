@@ -1,5 +1,5 @@
-//> using scala 3.8.3
-//> using dep dev.rolang::dumbo:0.8.1
+//> using scala 3.9.0
+//> using dep dev.rolang::dumbo:0.11.0
 //> using platform jvm
 //> using jvm system
 //> using file test-generated/generated
@@ -20,6 +20,7 @@ import dumbo.logging.Implicits.console
 import fs2.io.file.Path
 import generated.*
 import org.typelevel.otel4s.trace.Tracer.Implicits.noop
+import org.typelevel.otel4s.metrics.Meter.Implicits.noop
 import skunk.*
 import skunk.Session.Credentials
 import skunk.codec.all.*
